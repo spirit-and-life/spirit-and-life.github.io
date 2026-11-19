@@ -102,6 +102,8 @@ function demoImpl() {
     },
     async logout() { store.del('me'); },
     async rename(name) { const u = me(); if (!u) return; u.name = name; save(); all(); },
+    async adminRename(id, name) { const u = memo.users.find((x) => x.id === id); if (u) { u.name = name; save(); all(); } },
+    async adminDeleteUser(id) { memo.users = memo.users.filter((x) => x.id !== id); save(); all(); },
     async setRead(n, on) { const u = me(); if (!u) return; const s = new Set(u.readDays); on ? s.add(n) : s.delete(n); u.readDays = [...s].sort((a, b) => a - b); u.readAt = { ...(u.readAt || {}), [n]: Date.now() }; save(); all(); },
     async answerChq(key, c, t) { const u = me(); u.quiz = { ...(u.quiz || {}), [key]: { c, t } }; save(); all(); },
     async post(type, text, ref) { const u = me(); memo.wall.push({ id: 'w' + Date.now(), type, text, ref: ref || '', name: u.name, userId: u.id, at: Date.now(), amens: 0 }); save(); all(); },
@@ -173,6 +175,8 @@ async function firebaseImpl() {
     },
     async logout() { store.del('me'); store.del('myName'); myId = null; },
     async rename(name) { await F.updateDoc(F.doc(db, 'users', myId), { name, lastSeen: F.serverTimestamp() }); store.set('myName', name); },
+    async adminRename(id, name) { await F.updateDoc(F.doc(db, 'users', id), { name }); },
+    async adminDeleteUser(id) { await F.deleteDoc(F.doc(db, 'users', id)); try { await F.deleteDoc(F.doc(db, 'contacts', id)); } catch (e) { /* ignore */ } },
     async setRead(n, on) {
       await F.updateDoc(F.doc(db, 'users', myId), on ? { readDays: F.arrayUnion(n), [`readAt.${n}`]: F.serverTimestamp(), lastSeen: F.serverTimestamp() } : { readDays: F.arrayRemove(n) });
     },

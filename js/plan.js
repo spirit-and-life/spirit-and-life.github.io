@@ -25,9 +25,13 @@ export function fmtDate(s, withDay = true, withYear = false) {
   const d = new Date(s + 'T12:00:00Z');
   return (withDay ? WEEKDAYS[d.getUTCDay()] + ' ' : '') + ar(d.getUTCDate()) + ' ' + MONTHS[d.getUTCMonth()] + (withYear ? ' ' + ar(d.getUTCFullYear()) : '');
 }
+// فرق ساعة الجهاز عن ساعة السيرفر (بالميلي ثانية) — بيتظبط عند فتح الموقع عشان «النهارده» ما يتأثرش بساعة موبايل غلط
+let CLOCK = 0;
+export const setClockOffset = (ms) => { CLOCK = Math.abs(ms) > 120000 ? ms : 0; };
+export const nowMs = () => Date.now() + CLOCK;
 export function todayCairo() {
   try { const q = new URLSearchParams(location.search).get('date'); if (q && /^\d{4}-\d{2}-\d{2}$/.test(q)) return q; } catch (e) { /* ignore */ }
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(nowMs()));
 }
 
 export const DAYS = GROUPS.map((ch, i) => ({ n: i + 1, date: addDays(START, i), ch }));

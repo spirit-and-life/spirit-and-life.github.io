@@ -1,4 +1,4 @@
-import { DAYS, TOTAL, START, END, CHRISTMAS, BADGES, CH_TITLES, ar, fmtDate, todayCairo, status, dueDays, streak, chLabel, dayTitle, diffDays, addDays, weekday, keyVerse, weekOf } from './plan.js';
+import { setClockOffset, DAYS, TOTAL, START, END, CHRISTMAS, BADGES, CH_TITLES, ar, fmtDate, todayCairo, status, dueDays, streak, chLabel, dayTitle, diffDays, addDays, weekday, keyVerse, weekOf } from './plan.js';
 import { init, api, on, mode, normPhone, validPhone } from './data.js';
 import { $, $$, esc, APP, NAV, S, reduce, first, avatar, timeAgo, toast, vibrate, myRead, meU, greeting, loadText, ICON, topbar, foot, burst, plural } from './ui.js';
 import { userStats, readState, nextBadge, weekRange, lampLevel, LAMP_NAMES } from './stats.js';
@@ -178,7 +178,7 @@ function vWall() {
   <div class="seg" role="tablist"><button class="${tab === 'verse' ? 'on' : ''}" data-t="verse">✨ آيات</button><button class="${tab === 'reflection' ? 'on' : ''}" data-t="reflection">✍️ تأملات</button></div>
   <section class="card compose"><textarea id="ptext" maxlength="400" placeholder="${tab === 'verse' ? 'اكتب الآية اللي لمستك النهارده…' : 'اكتب تأمل قصير من قراءة النهارده…'}"></textarea>${tab === 'verse' ? '<input id="pref" maxlength="40" placeholder="الشاهد (مثلًا: تكوين ١: ٣)">' : ''}
   <button class="btn primary block" id="psend" style="margin-top:10px">${tab === 'verse' ? 'شارك الآية' : 'شارك التأمل'}</button></section>
-  <div class="stagger">${list.length ? list.map((w) => `<article class="card post ${w.type}"><div class="who">${avatar(w.name)}<div class="grow"><b>${esc(w.name)}</b><div class="sub" style="font-size:12px">${timeAgo(w.at)}</div></div>${w.userId === S.me.id ? `<button class="chip" data-del="${w.id}" aria-label="حذف">حذف</button>` : ''}</div>
+  <div class="stagger">${list.length ? list.map((w) => `<article class="card post ${w.type}"><div class="who">${avatar(w.name)}<div class="grow"><b>${esc(w.name)}</b><div class="sub" style="font-size:12px">${timeAgo(w.at)}</div></div>${(w.userId === S.me.id || S.admin) ? `<button class="chip" data-del="${w.id}" aria-label="حذف">حذف</button>` : ''}</div>
     <p class="txt ${w.type === 'verse' ? 'verse-q' : ''}">${w.type === 'verse' ? '«' + esc(w.text) + '»' : esc(w.text)}</p>${w.ref ? `<p class="ref">${esc(w.ref)}</p>` : ''}
     <div class="foot"><span class="sub">${ar(w.amens || 0)} آمين</span><button class="amen ${am.has(w.id) ? 'did' : ''}" data-amen="${w.id}">${am.has(w.id) ? 'آمين ✓' : '🙏 آمين'}</button></div></article>`).join('')
     : '<div class="card" style="text-align:center"><p class="muted">لسه مفيش حاجة هنا… كن أول واحد يشارك 🤍</p></div>'}</div>${foot()}</div>`;
@@ -262,7 +262,9 @@ addEventListener('hashchange', route);
 
 (async () => {
   APP.innerHTML = `<div class="boot">${shipMark('boot-ship ship-bob')}</div>`;
+  try { const t0 = Date.now(); const r = await fetch('index.html', { method: 'HEAD', cache: 'no-store' }); const d = Date.parse(r.headers.get('date') || ''); if (d) setClockOffset(d + (Date.now() - t0) / 2 - Date.now()); } catch (e) { /* ignore */ }
   try { S.me = await init(); } catch (e) { console.error(e); }
+  try { S.admin = await api.isServant(); } catch (e) { S.admin = false; }
   route();
   if ('serviceWorker' in navigator && location.protocol === 'https:') { try { navigator.serviceWorker.register('sw.js'); } catch (e) { /* ignore */ } }
 })();

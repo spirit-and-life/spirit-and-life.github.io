@@ -16,6 +16,7 @@ service cloud.firestore {
       allow read: if signedIn();
       allow create: if signedIn() && id.matches('^[0-9a-f]{32}$') && okUser(request.resource.data);
       allow update: if signedIn() && okUser(request.resource.data) && request.resource.data.createdAt == resource.data.createdAt;
+      allow update: if isServant() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name']) && request.resource.data.name is string && request.resource.data.name.size() >= 2 && request.resource.data.name.size() <= 40;
       allow delete: if isServant();
     }
     // أرقام الموبايل: المسؤولين بس بيقروها

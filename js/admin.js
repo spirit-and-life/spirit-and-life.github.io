@@ -29,10 +29,10 @@ function gate() {
     <details class="card"><summary><b>أول مرة؟ حدد الكود</b></summary><p class="sub" style="margin:8px 0">الكود بيتحدد مرة واحدة بس من الموقع، وبعد كده بيتغيّر من Firebase بس.</p>
     <div class="field"><input id="ncode" type="password" placeholder=" " minlength="4"><label for="ncode">الكود الجديد (٤ حروف أو أرقام على الأقل)</label></div>
     <div class="field"><input id="ncode2" type="password" placeholder=" "><label for="ncode2">اكتبه تاني للتأكيد</label></div><button class="btn ghost block" id="setc">احفظ الكود</button></details></div>`;
-  $('#go').onclick = async () => { $('#go').disabled = true; if (await api.unlock($('#code').value.trim())) { toast('أهلًا بيك 🙏'); vAdmin(); } else { $('#go').disabled = false; toast('الكود غلط'); } };
+  $('#go').onclick = async () => { $('#go').disabled = true; if (await api.unlock($('#code').value.trim())) { S.admin = true; toast('أهلًا بيك 🙏'); vAdmin(); } else { $('#go').disabled = false; toast('الكود غلط'); } };
   $('#setc').onclick = async () => {
     const c = $('#ncode').value.trim(); if (c.length < 4) return toast('الكود لازم يكون ٤ حروف أو أرقام على الأقل'); if (c !== $('#ncode2').value.trim()) return toast('الكودين مش زي بعض');
-    if (await api.setCode(c)) { toast('اتحفظ الكود ✓'); vAdmin(); } else toast('الكود متحدد قبل كده. ادخل بيه من فوق');
+    if (await api.setCode(c)) { S.admin = true; toast('اتحفظ الكود ✓'); vAdmin(); } else toast('الكود متحدد قبل كده. ادخل بيه من فوق');
   };
 }
 
@@ -117,8 +117,11 @@ function personModal(u) {
     <div class="stats" style="margin-top:12px"><div class="stat"><b>${ar(s.onTime)}</b><span>في معاده</span></div><div class="stat"><b>${ar(s.late)}</b><span>متأخر</span></div><div class="stat"><b>${ar(s.missed)}</b><span>فاته</span></div></div>
     <div class="dgrid">${DAYS.map((d) => `<i class="${d.date > t ? 'fu' : readState(u, d.n)}" title="اليوم ${d.n}">${ar(d.n)}</i>`).join('')}</div>
     <p class="legend2" style="justify-content:center;margin-top:8px"><i class="on"></i>في معاده <i class="la"></i>متأخر <i class="no"></i>فاته</p>
-    <div class="actions">${phoneOf(u) ? waBtn(u, `سلام يا ${first(u.name)} 🌿`) : ''}<button class="btn ghost" id="cl">قفل</button></div></div>`;
+    <div class="actions">${phoneOf(u) ? waBtn(u, `سلام يا ${first(u.name)} 🌿`) : ''}<button class="btn ghost" id="cl">قفل</button></div>
+    <div class="actions"><button class="btn ghost" id="ren">تعديل الاسم</button><button class="btn ghost" id="rm" style="color:var(--heart)">حذف المشترك</button></div></div>`;
   document.body.appendChild(m); m.onclick = (e) => { if (e.target === m || e.target.id === 'cl') m.remove(); };
+  m.querySelector('#ren').onclick = async () => { const n = (prompt('الاسم الجديد', u.name) || '').trim(); if (n.length < 2) return; await api.adminRename(u.id, n); toast('اتعدّل الاسم ✓'); m.remove(); };
+  m.querySelector('#rm').onclick = async (ev) => { const b = ev.currentTarget; if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = 'متأكد؟ اضغط تاني'; setTimeout(() => { delete b.dataset.sure; b.textContent = 'حذف المشترك'; }, 3000); return; } await api.adminDeleteUser(u.id); toast('اتحذف المشترك'); m.remove(); };
 }
 
 // ---------------------------------------------------------------- منشئ الأسئلة (للبنك وللامتحانات)
@@ -154,9 +157,11 @@ function bank(el, arg) {
   if (!cur.length) cur.push({ q: '', options: ['', '', '', ''], answer: 0, explain: '' });
   el.innerHTML = `<section class="card"><h2>بنك الأسئلة</h2><p class="sub">أسئلة على كل أصحاح (اختياري). بتظهر للمشتركين تحت الأصحاح بعنوان «اختبر نفسك»، وتقدر تستورد منها في الامتحانات.</p>
     <select id="ksel" style="margin-top:10px">${CH.map((c) => `<option value="${c.key}" ${c.key === key ? 'selected' : ''}>${c.label}${has(c.key) ? ` ✓ (${ar(has(c.key))})` : ''}</option>`).join('')}</select></section>
+  <section class="card"><div class="between"><div><b>أسئلة جاهزة</b><p class="sub">٣ أسئلة على كل أصحاح من تكوين ١ لـ ٧ (أسبوع الرحلة الأول). مراجعتها قبل الاستخدام أفضل.</p></div><button class="btn ghost" id="seed">استورد</button></div></section>
   <section class="card"><div id="qb"></div><div class="actions"><button class="btn primary" id="qsave">حفظ الأسئلة</button>${has(key) ? '<button class="btn ghost" id="qclear">امسح أسئلة الأصحاح</button>' : ''}</div></section>`;
   const get = qBuilder($('#qb', el), cur);
   $('#ksel', el).onchange = (e) => { location.hash = `#/admin/bank/${e.target.value}`; };
+  $('#seed', el).onclick = async () => { const b = $('#seed', el); b.disabled = true; try { const seed = await (await fetch('data/seed-questions.json')).json(); let n = 0; for (const [k, qs] of Object.entries(seed)) { if ((S.chq[k]?.questions || []).length) continue; await api.saveChq(k, qs); n++; } toast(n ? `اتضافت أسئلة ${ar(n)} أصحاحات ✓` : 'الأصحاحات دي فيها أسئلة بالفعل'); setTimeout(() => bank(el, key), 400); } catch (e) { console.error(e); toast('حصلت مشكلة في الاستيراد'); b.disabled = false; } };
   $('#qsave', el).onclick = async () => { const r = get(); if (r.error) return toast(r.error); await api.saveChq(key, r.questions); toast(r.questions.length ? `اتحفظ ${ar(r.questions.length)} سؤال ✓` : 'مفيش أسئلة على الأصحاح ده'); };
   $('#qclear', el) && ($('#qclear', el).onclick = async () => { await api.saveChq(key, []); toast('اتمسحت'); bank(el, key); });
 }
@@ -173,7 +178,7 @@ async function examsTab(el, arg) {
     <p class="sub">${ar(e.questions.length)} سؤال${e.desc ? `، ${esc(e.desc)}` : ''}</p>
     ${e.openAt || e.closeAt ? `<p class="sub">${e.openAt ? `بيفتح: ${fmtTime(e.openAt)}` : ''}${e.openAt && e.closeAt ? ' · ' : ''}${e.closeAt ? `بيقفل: ${fmtTime(e.closeAt)}` : ''}</p>` : ''}<p class="subs" data-c="${e.id}">…</p>
     <div class="xacts">${e.status === 'draft' || e.status === 'closed' ? '<button class="btn primary" data-a="open">افتح الامتحان</button>' : ''}${e.status === 'open' ? '<button class="btn primary" data-a="close">اقفل الامتحان</button>' : ''}
-    ${e.status !== 'published' ? '<button class="btn red" data-a="publish">اعلن النتيجة</button>' : '<button class="btn ghost" data-a="republish">حدّث النتيجة</button>'}${e.status !== 'published' ? `<a class="btn ghost" href="#/admin/exams/edit-${e.id}">تعديل</a>` : ''}
+    ${e.status !== 'published' ? '<button class="btn red" data-a="publish">اعلن النتيجة</button>' : '<button class="btn ghost" data-a="republish">حدّث النتيجة</button><button class="btn ghost" data-a="csv">⬇️ CSV</button>'}${e.status !== 'published' ? `<a class="btn ghost" href="#/admin/exams/edit-${e.id}">تعديل</a>` : ''}
     <button class="btn ghost" data-a="del">حذف</button></div></section>`; }).join('') : '<section class="card empty"><div class="big">📝</div><h2>مفيش امتحانات لسه</h2><p class="sub">اعمل امتحان عام أو امتحان في آخر السفر، وحدد وقت الفتح والقفل. النتيجة بتظهر في «قائمة الشرف» لما تعلنها.</p></section>'}`;
   for (const e of ex) { api.submissions(e.id).then((s) => { const p = $(`[data-c="${e.id}"]`, el); if (p) p.textContent = `${ar(s.length)} سلّموا إجاباتهم`; }).catch(() => {}); }
   $$('.exam-admin', el).forEach((card) => card.querySelectorAll('[data-a]').forEach((b) => b.onclick = async () => {
@@ -184,6 +189,11 @@ async function examsTab(el, arg) {
       b.disabled = true; const [key, subs] = await Promise.all([api.examKey(id), api.submissions(id)]);
       const results = buildResults(key, subs); await api.saveExam({ id, status: 'published', results });
       toast(`اتعلنت النتيجة، ${ar(results.length)} مشترك 🏆`); const r = b.getBoundingClientRect(); burst(r.left + r.width / 2, r.top, 120);
+    }
+    if (a === 'csv') {
+      const e = S.exams.find((x) => x.id === id); const rows = (e.results || []).map((r, i) => [i + 1, r.name, phoneOf({ id: r.id }), r.score, r.total, r.dur ? Math.floor(r.dur / 60) + ':' + String(r.dur % 60).padStart(2, '0') : '']);
+      const csv = '﻿' + [['الترتيب', 'الاسم', 'الموبايل', 'الدرجة', 'من', 'الوقت'], ...rows].map((r) => r.map((x) => '"' + String(x).replace(/"/g, '""') + '"').join(',')).join('\n');
+      const l = document.createElement('a'); l.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); l.download = 'نتيجة-' + e.title + '.csv'; l.click(); return;
     }
     if (a === 'del') { if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = 'متأكد؟ اضغط تاني'; setTimeout(() => { delete b.dataset.sure; b.textContent = 'حذف'; }, 3000); return; } await api.deleteExam(id); toast('اتمسح'); }
     setTimeout(() => examsTab(el), 300);
