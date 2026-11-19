@@ -31,14 +31,53 @@ function badgeModal(b) {
 }
 
 // ---------- النهارده ----------
+// ---------- أنوار البحر: الكارت الصغير + البحر الكبير (بيتفتح بالضغط) ----------
+const hashId = (s) => { let h = 2166136261; for (const c of String(s)) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } h ^= h >>> 16; h = Math.imul(h, 0x45d9f3b); h ^= h >>> 15; h = Math.imul(h, 0x2c1b3c6d); h ^= h >>> 16; return h >>> 0; };
+function seaBackdrop(p) {
+  return `<svg class="sc" viewBox="0 0 320 120" preserveAspectRatio="none" aria-hidden="true">
+  <defs><linearGradient id="${p}sk" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#030d1d"/><stop offset=".55" stop-color="#0A2A52"/><stop offset="1" stop-color="#0D4A8B"/></linearGradient>
+  <radialGradient id="${p}mn"><stop offset="0" stop-color="#fff" stop-opacity=".9"/><stop offset="1" stop-color="#EAF6FC" stop-opacity="0"/></radialGradient>
+  <linearGradient id="${p}bm" x1="0" x2="1"><stop offset="0" stop-color="#FFC857" stop-opacity=".7"/><stop offset="1" stop-color="#FFC857" stop-opacity="0"/></linearGradient>
+  <linearGradient id="${p}wt" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0D4A8B" stop-opacity=".55"/><stop offset="1" stop-color="#061A33"/></linearGradient></defs>
+  <rect width="320" height="120" fill="url(#${p}sk)"/>
+  <circle cx="276" cy="22" r="22" fill="url(#${p}mn)"/><circle cx="276" cy="22" r="9" fill="#F4FBFE"/><circle cx="272" cy="19" r="2" fill="#D6ECF6"/><circle cx="280" cy="25" r="1.4" fill="#D6ECF6"/>
+  <g transform="translate(40 24)"><path class="bmx" d="M12 8L-34 -4V20Z" fill="url(#${p}bm)"/><path class="bmx b2" d="M12 8L58 -4V20Z" fill="url(#${p}bm)" style="transform:scaleX(-1);transform-origin:12px 8px"/>
+    <path d="M7 36L9 12H15L17 36Z" fill="#F4FBFE"/><path d="M8 22H16V27H8Z" fill="#0D4A8B"/><rect x="8" y="6" width="8" height="7" rx="1" fill="#FFC857"/><path d="M6 6Q12 -2 18 6Z" fill="#0D4A8B"/><path d="M12 -2V-8M9.5 -5H14.5" stroke="#FFC857" stroke-width="1.4" stroke-linecap="round"/></g>
+  <rect y="58" width="320" height="62" fill="url(#${p}wt)"/>
+  <path d="M0 58H320" stroke="#8FD3F0" stroke-opacity=".55"/>
+  <path d="M250 58V120" stroke="url(#${p}mn)" stroke-width="16" opacity=".28"/>
+  <g fill="none" stroke="#8FD3F0" stroke-linecap="round"><path class="wvx" d="M-20 72q20-6 40 0t40 0t40 0t40 0t40 0t40 0t40 0t40 0" stroke-opacity=".3"/><path class="wvx w2" d="M-20 88q20-6 40 0t40 0t40 0t40 0t40 0t40 0t40 0t40 0" stroke-opacity=".22"/><path class="wvx w3" d="M-20 104q20-6 40 0t40 0t40 0t40 0t40 0t40 0t40 0t40 0" stroke-opacity=".16"/></g></svg>`;
+}
 function lightsHTML(n) {
   const list = S.users; const readers = list.filter((u) => (u.readDays || []).includes(n));
   const myOn = readers.some((u) => u.id === S.me.id);
-  const lamps = readers.filter((u) => u.id !== S.me.id).map((u, i) => { let h = 0; for (const c of u.id) h = (h * 31 + c.charCodeAt(0)) >>> 0; const x = 4 + ((h % 880) / 10), y = 26 + ((h >> 5) % 46); return `<i class="lamp" title="${esc(u.name)}" style="left:${x.toFixed(1)}%;top:${y}%;animation-delay:${((i * .27) % 3).toFixed(2)}s"></i>`; }).join('');
-  const me = myOn ? '<i class="lamp me" style="left:50%;top:30%"></i><span class="me-tag" style="left:calc(50% - 16px);top:4%">أنت</span>' : '';
+  const lamps = readers.filter((u) => u.id !== S.me.id).map((u, i) => { const h = hashId(u.id); const x = 4 + ((h % 880) / 10), y = 58 + ((h >>> 5) % 28); return `<i class="lamp" style="left:${x.toFixed(1)}%;top:${y}%;animation-delay:${((i * .27) % 3).toFixed(2)}s"></i>`; }).join('');
+  const me = myOn ? '<i class="lamp me" style="left:50%;top:60%"></i><span class="me-tag" style="left:calc(50% - 16px);top:38%">أنت</span>' : '';
   const others = readers.filter((u) => u.id !== S.me.id).slice(0, 3).map((u) => esc(first(u.name)));
-  return `<div class="lights"><div class="hz"></div>${lamps}${me}${!readers.length ? '<p class="lights-empty">كن أول نور النهارده ✨</p>' : ''}</div>
-  <p class="names"><b>${ar(readers.length)}</b> من ${ar(list.length)} قروا النهارده${others.length ? ` — ${others.join('، ')}${readers.length - myOn - others.length > 0 ? ` و${ar(readers.length - (myOn ? 1 : 0) - others.length)} كمان` : ''}` : ''}</p>`;
+  return `<div class="lights tap" id="lights" role="button" tabindex="0" aria-label="كبّر البحر وشوف كل الناس">${seaBackdrop('c')}${lamps}${me}${!readers.length ? '<p class="lights-empty">كن أول نور النهارده ✨</p>' : ''}<span class="expand">⤢ كبّر البحر</span></div>
+  <p class="names"><b>${ar(readers.length)}</b> من ${ar(list.length)} قروا النهارده${others.length ? ` — ${others.join('، ')}${readers.length - (myOn ? 1 : 0) - others.length > 0 ? ` و${ar(readers.length - (myOn ? 1 : 0) - others.length)} كمان` : ''}` : ''}</p>`;
+}
+function openSea(n) {
+  const t = todayCairo(); const all = S.users.map((u) => { const s = userStats(u, t); return { u, s, lvl: lampLevel(s), lit: (u.readDays || []).includes(n) }; });
+  const lit = all.filter((x) => x.lit).length; const root = document.createElement('div'); root.className = 'seaview'; root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true');
+  root.innerHTML = `<div class="sv-top"><div><h3>بحر النهارده</h3><p><b>${ar(lit)}</b> نور من ${ar(all.length)} · اضغط على أي فنار</p></div><button class="iconbtn" id="svx" aria-label="قفل">✕</button></div>
+  <div class="sv-tabs"><button class="on" data-f="all">الكل</button><button data-f="lit">اللي قروا</button><button data-f="off">اللي لسه</button></div>
+  <div class="sv-scene" id="svs"><div class="sv-sky"><div class="stars">${starsHTML(40, 80)}</div><div class="sv-moon"></div><div class="sv-far">${lamp(5)}</div>${shipMark('sv-ship', NIGHT + '--sh-heart-o:0')}</div>
+    <div class="sv-water"><svg class="sv-waves" viewBox="0 0 720 60" preserveAspectRatio="none" aria-hidden="true"><path d="M0 22q45-22 90 0t90 0t90 0t90 0t90 0t90 0t90 0t90 0V60H0z" fill="#0D4A8B" opacity=".5"/></svg><div class="sv-lanterns" id="svl"></div></div></div>
+  <div class="sv-info" id="svinfo">اضغط على أي فنار تشوف صاحبه 🏮</div>`;
+  document.body.appendChild(root); document.body.style.overflow = 'hidden';
+  const close = () => { root.classList.add('out'); document.body.style.overflow = ''; document.removeEventListener('keydown', esc2); setTimeout(() => root.remove(), 250); };
+  const esc2 = (e) => { if (e.key === 'Escape') close(); }; document.addEventListener('keydown', esc2); $('#svx', root).onclick = close;
+  const draw = (f) => {
+    const arr = all.filter((x) => (f === 'lit' ? x.lit : f === 'off' ? !x.lit : true)).sort((a, b) => (a.u.id === S.me.id) - (b.u.id === S.me.id) || b.lvl - a.lvl || a.u.name.localeCompare(b.u.name, 'ar'));
+    const per = 4, rowH = 120, rows = Math.max(1, Math.ceil(arr.length / per)); const box = $('#svl', root); box.style.height = (rows * rowH + 40) + 'px';
+    box.innerHTML = arr.map((x, i) => { const r = Math.floor(i / per), c = i % per; const h = hashId(x.u.id); const sc = (.74 + .36 * (rows > 1 ? r / (rows - 1) : 1)).toFixed(2);
+      const left = ((c + .5 + (r % 2 ? .25 : -.1)) / per) * 100 + ((h % 7) - 3); const top = r * rowH + 6 + ((h >>> 3) % 14);
+      return `<button class="lt ${x.lit ? 'lit' : 'off'} ${x.u.id === S.me.id ? 'me' : ''}" data-id="${x.u.id}" style="left:${Math.max(15, Math.min(85, left)).toFixed(1)}%;top:${top}px;--s:${sc};animation-delay:${((i * .31) % 3).toFixed(2)}s"><span class="lt-svg">${lamp(x.lvl, true)}</span><span class="lt-refl"></span><span class="lt-name">${x.u.id === S.me.id ? 'أنت' : esc(first(x.u.name))}</span></button>`; }).join('') || '<p class="lights-empty" style="position:static;padding:40px 0">مفيش حد هنا لسه</p>';
+    $$('.lt', box).forEach((b) => b.onclick = () => { const x = all.find((y) => y.u.id === b.dataset.id); const s = x.s; $$('.lt.sel', box).forEach((e) => e.classList.remove('sel')); b.classList.add('sel');
+      $('#svinfo', root).innerHTML = `${avatar(x.u.name, 34)}<span class="grow"><b>${esc(x.u.name)}${x.u.id === S.me.id ? ' (أنت)' : ''}</b><small>فنار: ${LAMP_NAMES[x.lvl - 1]} · ${ar(s.onTime)} يوم في معاده${s.streak > 1 ? ` · ${ar(s.streak)} متتالي` : ''}</small></span><em class="${x.lit ? 'on' : ''}">${x.lit ? 'قرا النهارده ✓' : 'لسه'}</em>`; });
+  };
+  draw('all'); $$('.sv-tabs button', root).forEach((b) => b.onclick = () => { $$('.sv-tabs button', root).forEach((e) => e.classList.toggle('on', e === b)); draw(b.dataset.f); $('#svs', root).scrollTop = 0; });
 }
 function weekHTML() {
   const t = todayCairo(); const [s] = weekRange(t); const u = meU();
@@ -117,6 +156,7 @@ function vToday() {
     ${st.phase === 'reading' ? `<section class="card"><div class="between"><h2>أنوار البحر</h2><span class="sub">كل واحد يقرا يطلع نوره</span></div>${lightsHTML(st.day.n)}</section>${reflHTML(st.day.n)}${verseHTML(st.day)}${weekHTML()}${quizCTA(st.day)}` : weekHTML()}
     ${lampPreview()}${familyHTML()}${missedHTML()}${countdownHTML()}${foot()}</div></div>`;
   $('#readNow')?.addEventListener('click', (e) => markRead(st.day.n, e.currentTarget));
+  const lg = $('#lights'); if (lg && st.phase === 'reading') { lg.addEventListener('click', () => openSea(st.day.n)); lg.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openSea(st.day.n); } }); }
   examBanner($('#exb'));
   if (st.phase === 'reading') {
     const hook = () => { const k = keyVerse(st.day.n); $('#vshare')?.addEventListener('click', () => { const [c, v] = k; shareVerseImage(S.text[c][v - 1], `تكوين ${ar(c)}: ${ar(v)}`); }); };

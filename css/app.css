@@ -381,3 +381,53 @@ details summary{cursor:pointer}.exam-admin .xacts{display:flex;gap:8px;flex-wrap
 @keyframes lineDawn{to{stroke:#0D4A8B}}@keyframes fillDawn{to{fill:#0D4A8B}}@keyframes bandDawn{to{fill:#0B1F3F}}
 @media(prefers-reduced-motion:reduce){.world,.ship-bob,.ripple,.stars span,.lamp,.flick,.pulse,.bm{animation:none!important}}
 @media(min-width:900px){body{background:radial-gradient(1000px 500px at 50% -10%,#fff,transparent 60%),#E4F3FA}#app:not(.full){box-shadow:0 0 60px -30px rgba(10,42,82,.5);background:rgba(255,255,255,.35)}}
+
+/* ---------- أنوار البحر: كارت بتفاصيل + بحر كبير ---------- */
+.lights{height:150px;background:#061A33}
+.lights.tap{cursor:pointer;transition:transform .2s var(--ease)}
+.lights.tap:active{transform:scale(.985)}
+.lights .sc{position:absolute;inset:0;width:100%;height:100%}
+.lights .lamp,.lights .me-tag,.lights .lights-empty{z-index:2}
+.expand{position:absolute;left:8px;bottom:8px;z-index:3;font-size:11.5px;font-weight:600;color:#fff;background:rgba(255,255,255,.14);border:1px solid rgba(143,211,240,.45);padding:2px 10px;border-radius:99px;backdrop-filter:blur(4px)}
+.wvx{animation:wvx 7s linear infinite}.wvx.w2{animation-duration:9s;animation-direction:reverse}.wvx.w3{animation-duration:12s}
+@keyframes wvx{to{transform:translateX(-40px)}}
+.bmx{animation:bmsweep 6s ease-in-out infinite}.bmx.b2{animation-delay:-3s}
+.lamp{width:9px;height:11px;border-radius:2px 2px 4px 4px;background:radial-gradient(#fff6cf,#FFC857 70%);box-shadow:0 0 12px 5px rgba(255,200,87,.45),inset 0 0 0 1px rgba(255,255,255,.55)}
+.lamp::before{content:"";position:absolute;left:-1.5px;right:-1.5px;top:-4px;height:5px;background:#5BB6DD;clip-path:polygon(50% 0,100% 100%,0 100%)}
+.lamp::after{top:12px}
+.lamp.me{width:15px;height:18px}.lamp.me::before{top:-6px;height:7px}.lamp.me::after{top:19px}
+.seaview{position:fixed;inset:0;z-index:60;background:#030d1d;display:flex;flex-direction:column;color:#fff;animation:svIn .45s var(--ease)}
+.seaview.out{animation:svOut .25s forwards}
+@keyframes svIn{from{opacity:0;transform:scale(.92) translateY(30px)}to{opacity:1;transform:none}}
+@keyframes svOut{to{opacity:0;transform:scale(.96)}}
+.sv-top{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:calc(env(safe-area-inset-top,0px) + 12px) 16px 8px;position:relative;z-index:4}
+.sv-top h3{font-size:22px}.sv-top p{font-size:13px;color:var(--sky)}.sv-top b{color:var(--lantern)}
+.sv-top .iconbtn{background:rgba(255,255,255,.1);border-color:rgba(143,211,240,.4);color:#fff;font-size:16px}
+.sv-tabs{display:flex;gap:6px;padding:0 16px 8px;position:relative;z-index:4}
+.sv-tabs button{padding:6px 14px;border-radius:99px;font-size:13px;font-weight:600;background:rgba(255,255,255,.08);color:var(--sky);border:1px solid rgba(143,211,240,.3)}
+.sv-tabs .on{background:var(--lantern);color:var(--ink);border-color:var(--lantern)}
+.sv-scene{flex:1;overflow-y:auto;position:relative;scrollbar-width:none}.sv-scene::-webkit-scrollbar{display:none}
+.sv-sky{position:relative;height:230px;background:linear-gradient(#030d1d,#0A2A52 70%,#0D4A8B);overflow:hidden}
+.sv-sky .stars{position:absolute;inset:0}
+.sv-moon{position:absolute;top:18px;left:22px;width:46px;height:46px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#fff,#EAF6FC 60%,#cfe3ee);box-shadow:0 0 40px 14px rgba(234,246,252,.35)}
+.sv-far{position:absolute;right:calc(50% - 60px);bottom:-6px;width:120px;opacity:.92}
+.sv-far .lampsvg{width:120px;height:170px}
+.sv-ship{position:absolute;bottom:2px;width:70px;height:70px;animation:drift 38s linear infinite}
+@keyframes drift{from{left:-80px}to{left:105%}}
+.sv-water{position:relative;padding-top:26px;background:linear-gradient(#0D4A8B,#0A2A52 25%,#061A33);min-height:calc(100% - 230px)}
+.sv-waves{position:absolute;left:0;top:-14px;width:200%;height:60px;animation:wv 11s linear infinite}
+.sv-lanterns{position:relative}
+.lt{position:absolute;width:calc(76px*var(--s));transform:translateX(-50%);text-align:center;color:#fff;background:none;animation:bobl 3.4s ease-in-out infinite alternate}
+.lt-svg{display:block}.lt-svg .lampsvg{width:100%;height:auto;display:block}
+.lt-name{display:block;font-size:calc(11px + 2px*var(--s));font-weight:600;color:#EEF8FC;text-shadow:0 1px 4px #000;margin-top:-4px;padding:0 6px;border-radius:99px}
+.lt-refl{position:absolute;left:50%;bottom:18px;width:70%;height:14px;transform:translateX(-50%);background:radial-gradient(ellipse,rgba(255,200,87,.55),transparent 70%);opacity:0}
+.lt.lit .lt-refl{opacity:1;animation:shim 2.6s ease-in-out infinite alternate}
+@keyframes shim{from{transform:translateX(-50%) scaleX(.8);opacity:.5}to{transform:translateX(-50%) scaleX(1.2);opacity:1}}
+.lt.off .lampsvg{filter:grayscale(1) brightness(.5)}.lt.off .pulse,.lt.off .flick,.lt.off .bm{display:none}
+.lt.me .lt-name{color:var(--lantern)}
+.lt.sel .lt-svg{filter:drop-shadow(0 0 12px rgba(255,200,87,.9))}
+.lt.sel .lt-name{background:var(--lantern);color:var(--ink)}
+.sv-info{position:relative;z-index:4;display:flex;align-items:center;gap:10px;padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px));background:rgba(6,26,51,.97);border-top:1px solid rgba(143,211,240,.25);font-size:14px;min-height:62px}
+.sv-info small{display:block;color:var(--sky);font-size:12.5px}
+.sv-info em{font-style:normal;font-size:12.5px;font-weight:700;padding:3px 10px;border-radius:99px;background:rgba(255,255,255,.1);color:var(--sky);white-space:nowrap}.sv-info em.on{background:var(--reef);color:#fff}
+@media(prefers-reduced-motion:reduce){.sv-ship,.sv-waves,.wvx,.bmx,.lt{animation:none!important}}
