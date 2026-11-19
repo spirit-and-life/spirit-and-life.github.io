@@ -1,0 +1,72 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{db}/documents {
+    function signedIn() { return request.auth != null; }
+    function isServant() { return signedIn() && exists(/databases/$(db)/documents/admins/$(request.auth.uid)); }
+    function owns(userId) { return signedIn() && request.auth.uid in get(/databases/$(db)/documents/users/$(userId)).data.uids; }
+    function okUser(d) {
+      return d.keys().hasOnly(['name','uids','readDays','readAt','quiz','createdAt','lastSeen'])
+        && d.name is string && d.name.size() >= 2 && d.name.size() <= 40
+        && d.uids is list && request.auth.uid in d.uids && d.uids.size() <= 40
+        && d.readDays is list && d.readDays.size() <= 47;
+    }
+
+    // المشتركين: المعرّف مشفّر (SHA-256) فمفيش رقم موبايل ظاهر هنا
+    match /users/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn() && id.matches('^[0-9a-f]{32}$') && okUser(request.resource.data);
+      allow update: if signedIn() && okUser(request.resource.data) && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isServant();
+    }
+    // أرقام الموبايل: المسؤولين بس بيقروها
+    match /contacts/{id} {
+      allow read: if isServant();
+      allow create, update: if owns(id) && request.resource.data.keys().hasOnly(['phone'])
+        && request.resource.data.phone is string && request.resource.data.phone.matches('^01[0125][0-9]{8}$');
+      allow delete: if isServant();
+    }
+    match /days/{day} { allow read: if signedIn(); allow write: if isServant(); }
+    match /chq/{key} { allow read: if signedIn(); allow write: if isServant(); }
+    match /exams/{id} { allow read: if signedIn(); allow write: if isServant(); }
+    // مفاتيح الإجابات الصح: المسؤولين بس
+    match /examKeys/{id} { allow read, write: if isServant(); }
+    // تسليم الامتحان: مرة واحدة (create بس) وفي وقت الفتح فقط
+    match /submissions/{sid} {
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid
+        && owns(request.resource.data.userId)
+        && sid == request.resource.data.examId + '_' + request.resource.data.userId
+        && request.resource.data.keys().hasOnly(['examId','userId','name','uid','answers','dur','at'])
+        && request.resource.data.answers is list && request.resource.data.answers.size() <= 100
+        && get(/databases/$(db)/documents/exams/$(request.resource.data.examId)).data.status == 'open'
+        && (!('openAt' in get(/databases/$(db)/documents/exams/$(request.resource.data.examId)).data)
+            || request.time >= get(/databases/$(db)/documents/exams/$(request.resource.data.examId)).data.openAt)
+        && (!('closeAt' in get(/databases/$(db)/documents/exams/$(request.resource.data.examId)).data)
+            || request.time <= get(/databases/$(db)/documents/exams/$(request.resource.data.examId)).data.closeAt);
+      allow read: if isServant() || (signedIn() && resource.data.uid == request.auth.uid);
+      allow delete: if isServant();
+    }
+    // آيات لمستنا (آيات وتأملات) وزرار «آمين»
+    match /wall/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid && owns(request.resource.data.userId)
+        && request.resource.data.type in ['verse','reflection']
+        && request.resource.data.text is string && request.resource.data.text.size() >= 1 && request.resource.data.text.size() <= 400
+        && request.resource.data.name is string && request.resource.data.name.size() <= 40
+        && (!('ref' in request.resource.data) || (request.resource.data.ref is string && request.resource.data.ref.size() <= 40))
+        && request.resource.data.amens == 0;
+      allow update: if signedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['amens'])
+        && request.resource.data.amens == resource.data.amens + 1;
+      allow delete: if isServant() || (signedIn() && resource.data.uid == request.auth.uid);
+    }
+    // المسؤولين: بكود بيتحدد مرة واحدة، وبعد كده بيتغيّر من Firebase بس
+    match /admins/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.code == get(/databases/$(db)/documents/secrets/servants).data.code;
+    }
+    match /secrets/servants {
+      allow read: if false;
+      allow create: if signedIn() && request.resource.data.code is string && request.resource.data.code.size() >= 4;
+    }
+  }
+}

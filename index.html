@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#061A33">
+<title>روح وحياة — رحلة قراءة سفر التكوين</title>
+<meta name="description" content="روح وحياة — خدمة قراءة الكتاب المقدس لموظفي مستشفى هرمل بمدينة السادات. سفر التكوين، أصحاح كل يوم لحد ليلة عيد الميلاد.">
+<link rel="icon" type="image/png" href="assets/img/icon-192.png">
+<link rel="apple-touch-icon" href="assets/img/icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="preload" href="assets/fonts/reem-kufi-arabic-700-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/fonts/ibm-plex-sans-arabic-arabic-500-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<main id="app" aria-live="polite"></main>
+<nav id="nav" hidden>
+  <a href="#/today" data-r="today"><svg class="ico"><use href="#i-lamp"/></svg><span>النهارده</span></a>
+  <a href="#/journey" data-r="journey"><svg class="ico"><use href="#i-map"/></svg><span>الرحلة</span></a>
+  <a href="#/plan" data-r="plan"><svg class="ico"><use href="#i-cal"/></svg><span>الخطة</span></a>
+  <a href="#/wall" data-r="wall"><svg class="ico"><use href="#i-verse"/></svg><span>آيات</span></a>
+  <a href="#/me" data-r="me"><svg class="ico"><use href="#i-user"/></svg><span>أنا</span></a>
+</nav>
+<div id="toast" role="status"></div>
+<canvas id="fx" aria-hidden="true"></canvas>
+<noscript><p style="padding:40px;text-align:center">لازم تفعّل JavaScript عشان الموقع يشتغل.</p></noscript>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
