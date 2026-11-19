@@ -113,7 +113,7 @@ function vToday() {
     hero = `<section class="hero"><div class="stars" aria-hidden="true">${starsHTML(26, 55)}</div><div class="eyebrow">الرحلة خلصت</div><h2>كل سنة وانت طيب ✨</h2><div class="sub">قريت ${ar(r.size)} من ${ar(TOTAL)} يوم</div>${scene}<div class="ctas"><a class="btn glass" href="#/me">شوف شهادتك</a></div></section>`;
     well = wellCard(true);
   }
-  APP.innerHTML = `<div class="view">${topbar()}<div class="stagger"><div class="hello"><h1>${greeting()} يا ${esc(name)}</h1><p>${st.phase === 'reading' ? 'جاهز لرحلة النهارده؟' : 'خليك قريب… الرحلة مستمرة.'}</p></div>${nudgeHTML()}<div id="exb"></div>${hero}${well}
+  APP.innerHTML = `<div class="view">${topbar()}<div class="stagger"><div class="hello"><h1>${greeting()} يا ${esc(name)}</h1><p>${st.phase === 'reading' ? 'جاهز لرحلة النهارده؟' : 'خليك قريب… الرحلة مستمرة.'}</p></div>${st.phase === 'reading' ? nudgeHTML() : ''}<div id="exb"></div>${hero}${well}
     ${st.phase === 'reading' ? `<section class="card"><div class="between"><h2>أنوار البحر</h2><span class="sub">كل واحد يقرا يطلع نوره</span></div>${lightsHTML(st.day.n)}</section>${reflHTML(st.day.n)}${verseHTML(st.day)}${weekHTML()}${quizCTA(st.day)}` : weekHTML()}
     ${lampPreview()}${familyHTML()}${missedHTML()}${countdownHTML()}${foot()}</div></div>`;
   $('#readNow')?.addEventListener('click', (e) => markRead(st.day.n, e.currentTarget));
