@@ -44,16 +44,29 @@ service cloud.firestore {
         && (!('closeAt' in get(/databases/$(db)/documents/exams/$(request.resource.data.examId)).data)
             || request.time <= get(/databases/$(db)/documents/exams/$(request.resource.data.examId)).data.closeAt);
       allow read: if isServant() || (signedIn() && resource.data.uid == request.auth.uid);
+      allow update: if isServant() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['grades']);
       allow delete: if isServant();
+    }
+    // أسئلة المشتركين للمسؤولين (بيردّوا عليها على الواتساب): صاحب السؤال والمسؤولين بس بيشوفوها
+    match /questions/{id} {
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid && owns(request.resource.data.userId)
+        && request.resource.data.status == 'new'
+        && request.resource.data.text is string && request.resource.data.text.size() <= 600
+        && request.resource.data.verse is string && request.resource.data.verse.size() <= 1500
+        && request.resource.data.ref is string && request.resource.data.ref.size() <= 80;
+      allow read: if isServant() || (signedIn() && resource.data.uid == request.auth.uid);
+      allow update, delete: if isServant();
     }
     // آيات لمستنا (آيات وتأملات) وزرار «آمين»
     match /wall/{id} {
       allow read: if signedIn();
-      allow create: if signedIn() && request.resource.data.uid == request.auth.uid && owns(request.resource.data.userId)
-        && request.resource.data.type in ['verse','reflection']
-        && request.resource.data.text is string && request.resource.data.text.size() >= 1 && request.resource.data.text.size() <= 400
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid
+        && request.resource.data.type in ['verse','reflection','prayer']
+        && (request.resource.data.type == 'prayer' ? (request.resource.data.userId == '' && request.resource.data.name.size() <= 3) : owns(request.resource.data.userId))
+        && request.resource.data.text is string && request.resource.data.text.size() >= 1 && request.resource.data.text.size() <= 1500
         && request.resource.data.name is string && request.resource.data.name.size() <= 40
         && (!('ref' in request.resource.data) || (request.resource.data.ref is string && request.resource.data.ref.size() <= 40))
+        && (!('note' in request.resource.data) || (request.resource.data.note is string && request.resource.data.note.size() <= 200))
         && request.resource.data.amens == 0;
       allow update: if signedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['amens'])
         && request.resource.data.amens == resource.data.amens + 1;

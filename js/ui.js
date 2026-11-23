@@ -6,7 +6,7 @@ export const $ = (s, r = document) => r.querySelector(s);
 export const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export const APP = $('#app'); export const NAV = $('#nav');
-export const S = { me: null, users: [], wall: [], days: {}, chq: {}, exams: [], text: null, wallTab: 'verse', fs: 22, contacts: null };
+export const S = { me: null, users: [], wall: [], days: {}, chq: {}, exams: [], text: null, wallTab: 'verse', fs: 22, contacts: null, myq: [], admin: false };
 try { S.fs = +localStorage.getItem('ruh:fs') || 22; } catch (e) { /* ignore */ }
 export const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 

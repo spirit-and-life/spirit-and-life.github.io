@@ -4,7 +4,7 @@
 import { firebaseConfig } from './firebase-config.js';
 import { DAYS, dueDays, todayCairo } from './plan.js';
 
-const listeners = { users: new Set(), wall: new Set(), days: new Set(), chq: new Set(), exams: new Set() };
+const listeners = { users: new Set(), wall: new Set(), days: new Set(), chq: new Set(), exams: new Set(), myq: new Set() };
 const emit = (k, v) => listeners[k].forEach((f) => { try { f(v); } catch (e) { console.error(e); } });
 const PFX = 'ruh:';
 const ck = {
@@ -44,11 +44,35 @@ export function examState(e, now = Date.now()) {
   if (e.closeAt && now > e.closeAt) return 'closed';
   return 'open';
 }
-export function scoreExam(key, answers) { let s = 0; (key || []).forEach((k, i) => { if (answers && answers[i] === k) s++; }); return s; }
-export function buildResults(key, subs) {
-  return subs.map((s) => ({ name: s.name, id: s.userId, score: scoreExam(key, s.answers), total: key.length, dur: s.dur || 0, at: ms(s.at) || 0 }))
+// ---- الامتحانات: ٤ أنواع أسئلة (اختياري / صح وخطأ / أكمل / مقالي)
+export const QTYPES = { mcq: 'اختياري', tf: 'صح وخطأ', fill: 'أكمل', essay: 'مقالي' };
+// توحيد الكتابة العربية لمقارنة إجابات «أكمل»: من غير تشكيل ولا تطويل، أ إ آ = ا، ى = ي، ة = ه، ومن غير «ال» في أول الكلمة
+export function normAr(t) {
+  return String(t ?? '').replace(/[\u064B-\u0652\u0670\u0640]/g, '').replace(/[أإآٱ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه').replace(/ؤ/g, 'و').replace(/ئ/g, 'ي')
+    .replace(/[٠-٩]/g, (c) => '٠١٢٣٤٥٦٧٨٩'.indexOf(c)).replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/^(ال)(?=\S{3,})/g, '').replace(/\s+/g, ' ').trim();
+}
+const accepted = (k) => String(k ?? '').split(/[\/،,|]| او /).map(normAr).filter(Boolean).map((x) => x.replace(/^ال(?=\S{3,})/, ''));
+export const qPts = (q) => Math.max(1, +(q && q.pts) || 1);
+export const qType = (q) => (q && q.type) || 'mcq';
+// سؤال واحد ← { got, max, auto, pending } (pending = مقالي لسه متصححش)
+export function gradeOne(q, k, a, g) {
+  const max = qPts(q); const t = qType(q);
+  if (g != null && g !== '') return { got: Math.min(max, Math.max(0, +g)), max, auto: false, pending: false };
+  if (a == null || a === '') return { got: 0, max, auto: true, pending: false };
+  if (t === 'essay') return { got: 0, max, auto: false, pending: true };
+  if (t === 'fill') { const x = normAr(a).replace(/^ال(?=\S{3,})/, ''); return { got: accepted(k).includes(x) ? max : 0, max, auto: true, pending: false }; }
+  return { got: a === k ? max : 0, max, auto: true, pending: false };
+}
+export function scoreSub(exam, key, sub) {
+  const Q = exam.questions || []; let score = 0, total = 0, pending = 0;
+  Q.forEach((q, i) => { const r = gradeOne(q, (key || [])[i], sub.answers && sub.answers[i], sub.grades && sub.grades[i]); score += r.got; total += r.max; if (r.pending) pending++; });
+  return { score, total, pending };
+}
+export function buildResults(exam, key, subs) {
+  return subs.map((s) => { const r = scoreSub(exam, key, s); return { name: s.name, id: s.userId, score: r.score, total: r.total, pending: r.pending, dur: s.dur || 0, at: ms(s.at) || 0 }; })
     .sort((a, b) => b.score - a.score || a.dur - b.dur || a.at - b.at);
 }
+export const initialOf = (n) => { const c = String(n || '').trim()[0]; return c ? c + '.' : '؟'; };
 
 let impl = null;
 export let mode = 'demo';
@@ -56,7 +80,7 @@ export let mode = 'demo';
 // ------------------------------------------------------------------ DEMO (على الجهاز بس)
 function demoImpl() {
   const K = 'demo1_';
-  const memo = { users: store.get(K + 'users', null), wall: store.get(K + 'wall', null), days: store.get(K + 'days', {}), chq: store.get(K + 'chq', {}), exams: store.get(K + 'exams', []), keys: store.get(K + 'keys', {}), subs: store.get(K + 'subs', []) };
+  const memo = { users: store.get(K + 'users', null), wall: store.get(K + 'wall', null), days: store.get(K + 'days', {}), chq: store.get(K + 'chq', {}), exams: store.get(K + 'exams', []), keys: store.get(K + 'keys', {}), subs: store.get(K + 'subs', []), qs: store.get(K + 'qs', null) };
   if (!memo.users) {
     const names = ['مينا عادل', 'مارينا سمير', 'كيرلس ناجي', 'مريم هاني', 'أبانوب رأفت', 'فادي جرجس', 'كاترين عماد', 'يوستينا مجدي', 'جورج صبحي', 'ماريان فايز', 'مايكل نبيل', 'ساندرا رامي', 'أندرو ماهر', 'ميرنا أشرف', 'شنودة فكري', 'فيرينا وجيه', 'بولا إسحق', 'ديفيد عاطف'];
     let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
@@ -90,9 +114,18 @@ function demoImpl() {
     memo.keys = { ex1: [0, 1, 1] };
     save();
   }
+  if (!memo.qs) {
+    memo.qs = [
+      { id: 'q1', userId: 'demo1002', name: 'كيرلس ناجي', uid: 'demo-demo1002', ref: 'تكوين ٦: ٢', verse: 'أَنَّ أَبْنَاءَ اللهِ رَأَوْا بَنَاتِ النَّاسِ أَنَّهُنَّ حَسَنَاتٌ', text: 'مين هما «أبناء الله» و«بنات الناس» هنا؟', status: 'new', at: Date.now() - 36e5 * 3 },
+      { id: 'q2', userId: 'demo1005', name: 'فادي جرجس', uid: 'demo-demo1005', ref: '', verse: '', text: 'إزاي قايين خاف إن حد يقتله وهما كانوا عيلة واحدة بس؟', status: 'answered', answeredBy: 'بيشوي', answeredAt: Date.now() - 36e5 * 20, at: Date.now() - 36e5 * 30 },
+    ];
+    memo.wall = (memo.wall || []).concat([{ id: 'w4', type: 'prayer', name: 'م.', userId: '', uid: 'demo-demo1003', text: 'صلّوا عشان امتحانات الميدترم الأسبوع الجاي', ref: '', at: Date.now() - 36e5 * 5, amens: 7 }]);
+    save();
+  }
   function save() { Object.entries(memo).forEach(([k, v]) => store.set(K + k, v)); }
   const me = () => memo.users.find((u) => u.id === store.get('me', null));
-  const all = () => { emit('users', memo.users.map(normUser)); emit('wall', memo.wall); emit('days', memo.days); emit('chq', memo.chq); emit('exams', memo.exams.map((x) => normExam(x.id, x))); };
+  const myUid = () => 'demo-' + (store.get('me', '') || '');
+  const all = () => { emit('myq', (memo.qs || []).filter((q) => q.uid === myUid())); emit('users', memo.users.map(normUser)); emit('wall', memo.wall); emit('days', memo.days); emit('chq', memo.chq); emit('exams', memo.exams.map((x) => normExam(x.id, x))); };
   return {
     async init() { setTimeout(all, 0); return me() ? normUser(me()) : null; },
     async login(name, phone) {
@@ -106,7 +139,8 @@ function demoImpl() {
     async adminDeleteUser(id) { memo.users = memo.users.filter((x) => x.id !== id); save(); all(); },
     async setRead(n, on) { const u = me(); if (!u) return; const s = new Set(u.readDays); on ? s.add(n) : s.delete(n); u.readDays = [...s].sort((a, b) => a - b); u.readAt = { ...(u.readAt || {}), [n]: Date.now() }; save(); all(); },
     async answerChq(key, c, t) { const u = me(); u.quiz = { ...(u.quiz || {}), [key]: { c, t } }; save(); all(); },
-    async post(type, text, ref) { const u = me(); memo.wall.push({ id: 'w' + Date.now(), type, text, ref: ref || '', name: u.name, userId: u.id, at: Date.now(), amens: 0 }); save(); all(); },
+    myUid,
+    async post(type, text, ref, note) { const u = me(); const anon = type === 'prayer'; memo.wall.push({ id: 'w' + Date.now(), type, text, ref: ref || '', note: note || '', name: anon ? initialOf(u.name) : u.name, userId: anon ? '' : u.id, uid: myUid(), at: Date.now(), amens: 0 }); save(); all(); },
     async amen(id) { const w = memo.wall.find((x) => x.id === id); if (w) { w.amens = (w.amens || 0) + 1; save(); all(); } },
     async removePost(id) { memo.wall = memo.wall.filter((x) => x.id !== id); save(); all(); },
     async isServant() { return !!store.get('servant', false); },
@@ -125,6 +159,10 @@ function demoImpl() {
     async submitExam(id, answers, dur) { const u = me(); if (memo.subs.some((s) => s.examId === id && s.userId === u.id)) return false; memo.subs.push({ examId: id, userId: u.id, name: u.name, answers, dur, at: Date.now() }); save(); return true; },
     async mySubmission(id) { const u = me(); return memo.subs.find((s) => s.examId === id && s.userId === u?.id) || null; },
     async submissions(id) { return memo.subs.filter((s) => s.examId === id); },
+    async gradeSubmission(id, userId, grades) { const s = memo.subs.find((x) => x.examId === id && x.userId === userId); if (s) { s.grades = grades; save(); } return true; },
+    async ask(text, ref, verse) { const u = me(); memo.qs.unshift({ id: 'q' + Date.now(), userId: u.id, name: u.name, uid: myUid(), text, ref: ref || '', verse: verse || '', status: 'new', at: Date.now() }); save(); all(); return true; },
+    async listQuestions() { return [...memo.qs].sort((a, b) => b.at - a.at); },
+    async markAnswered(id, by, on = true) { const q = memo.qs.find((x) => x.id === id); if (q) { q.status = on ? 'answered' : 'new'; q.answeredBy = on ? by : ''; q.answeredAt = on ? Date.now() : null; save(); all(); } return true; },
   };
 }
 
@@ -154,6 +192,7 @@ async function firebaseImpl() {
     subs.push(F.onSnapshot(F.collection(db, 'days'), (s) => { const m = {}; s.docs.forEach((d) => { m[d.id] = d.data(); }); emit('days', m); }));
     subs.push(F.onSnapshot(F.collection(db, 'chq'), (s) => { const m = {}; s.docs.forEach((d) => { m[d.id] = d.data(); }); emit('chq', m); }));
     subs.push(F.onSnapshot(F.collection(db, 'exams'), (s) => { emit('exams', s.docs.map((d) => normExam(d.id, d.data()))); }));
+    subs.push(F.onSnapshot(F.query(F.collection(db, 'questions'), F.where('uid', '==', uid)), (s) => { emit('myq', s.docs.map((d) => { const x = d.data(); return { id: d.id, ...x, at: ms(x.at) || Date.now(), answeredAt: ms(x.answeredAt) }; })); }, () => emit('myq', [])));
   }
   const me = () => users.find((u) => u.id === myId) || (myId ? normUser({ id: myId, name: store.get('myName', '') }) : null);
   return {
@@ -181,7 +220,8 @@ async function firebaseImpl() {
       await F.updateDoc(F.doc(db, 'users', myId), on ? { readDays: F.arrayUnion(n), [`readAt.${n}`]: F.serverTimestamp(), lastSeen: F.serverTimestamp() } : { readDays: F.arrayRemove(n) });
     },
     async answerChq(key, c, t) { await F.updateDoc(F.doc(db, 'users', myId), { [`quiz.${key}`]: { c, t }, lastSeen: F.serverTimestamp() }); },
-    async post(type, text, ref) { const u = me(); await F.addDoc(F.collection(db, 'wall'), { type, text, ref: ref || '', name: u.name, userId: myId, uid, at: F.serverTimestamp(), amens: 0 }); },
+    myUid: () => uid,
+    async post(type, text, ref, note) { const u = me(); const anon = type === 'prayer'; await F.addDoc(F.collection(db, 'wall'), { type, text, ref: ref || '', note: note || '', name: anon ? initialOf(u.name) : u.name, userId: anon ? '' : myId, uid, at: F.serverTimestamp(), amens: 0 }); },
     async amen(id) { await F.updateDoc(F.doc(db, 'wall', id), { amens: F.increment(1) }); },
     async removePost(id) { await F.deleteDoc(F.doc(db, 'wall', id)); },
     async isServant() { try { return (await F.getDoc(F.doc(db, 'admins', uid))).exists(); } catch (e) { return false; } },
@@ -204,6 +244,10 @@ async function firebaseImpl() {
     },
     async mySubmission(id) { try { const s = await F.getDoc(F.doc(db, 'submissions', `${id}_${myId}`)); return s.exists() ? s.data() : null; } catch (e) { return null; } },
     async submissions(id) { const q = await F.getDocs(F.query(F.collection(db, 'submissions'), F.where('examId', '==', id))); return q.docs.map((d) => d.data()); },
+    async gradeSubmission(id, userId, grades) { try { await F.updateDoc(F.doc(db, 'submissions', `${id}_${userId}`), { grades }); return true; } catch (e) { console.warn(e); return false; } },
+    async ask(text, ref, verse) { const u = me(); try { await F.addDoc(F.collection(db, 'questions'), { userId: myId, name: u.name, uid, text, ref: ref || '', verse: verse || '', status: 'new', at: F.serverTimestamp() }); return true; } catch (e) { console.warn(e); return false; } },
+    async listQuestions() { const q = await F.getDocs(F.query(F.collection(db, 'questions'), F.orderBy('at', 'desc'), F.limit(300))); return q.docs.map((d) => { const x = d.data(); return { id: d.id, ...x, at: ms(x.at) || 0, answeredAt: ms(x.answeredAt) }; }); },
+    async markAnswered(id, by, on = true) { try { await F.updateDoc(F.doc(db, 'questions', id), on ? { status: 'answered', answeredBy: by || '', answeredAt: F.serverTimestamp() } : { status: 'new', answeredBy: '', answeredAt: null }); return true; } catch (e) { console.warn(e); return false; } },
   };
 }
 

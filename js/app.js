@@ -1,5 +1,6 @@
 import { setClockOffset, DAYS, TOTAL, START, END, CHRISTMAS, BADGES, CH_TITLES, ar, fmtDate, todayCairo, status, dueDays, streak, chLabel, dayTitle, diffDays, addDays, weekday, keyVerse, weekOf } from './plan.js';
-import { init, api, on, mode, normPhone, validPhone } from './data.js';
+import { init, api, on, mode, normPhone, validPhone, initialOf } from './data.js';
+import { versePicker, askModal, myQuestionsHTML } from './extras.js';
 import { $, $$, esc, APP, NAV, S, reduce, first, avatar, timeAgo, toast, vibrate, myRead, meU, greeting, loadText, ICON, topbar, foot, burst, plural } from './ui.js';
 import { userStats, readState, nextBadge, weekRange, lampLevel, LAMP_NAMES } from './stats.js';
 import { chapterQuiz, vExam, examBanner, ttsSetup, shareVerseImage, drawCert } from './features.js';
@@ -154,7 +155,7 @@ function vToday() {
   }
   APP.innerHTML = `<div class="view">${topbar()}<div class="stagger"><div class="hello"><h1>${greeting()} يا ${esc(name)}</h1><p>${st.phase === 'reading' ? 'جاهز لرحلة النهارده؟' : 'خليك قريب… الرحلة مستمرة.'}</p></div>${st.phase === 'reading' ? nudgeHTML() : ''}<div id="exb"></div>${hero}${well}
     ${st.phase === 'reading' ? `<section class="card"><div class="between"><h2>أنوار البحر</h2><span class="sub">كل واحد يقرا يطلع نوره</span></div>${lightsHTML(st.day.n)}</section>${reflHTML(st.day.n)}${verseHTML(st.day)}${weekHTML()}${quizCTA(st.day)}` : weekHTML()}
-    ${lampPreview()}${familyHTML()}${missedHTML()}${countdownHTML()}${foot()}</div></div>`;
+    ${lampPreview()}${familyHTML()}<a class="card cta" href="#/wall/ask"><span class="ei">❓</span><span class="grow"><b>عندك سؤال أو محتاج تفسير لآية؟</b><small>اسأل المسؤولين، والرد هيوصلك على الواتساب</small></span>${ICON.back}</a>${missedHTML()}${countdownHTML()}${foot()}</div></div>`;
   $('#readNow')?.addEventListener('click', (e) => markRead(st.day.n, e.currentTarget));
   const lg = $('#lights'); if (lg && st.phase === 'reading') { lg.addEventListener('click', () => openSea(st.day.n)); lg.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openSea(st.day.n); } }); }
   examBanner($('#exb'));
@@ -177,13 +178,15 @@ async function vRead(n, tab = 0) {
   chapEl.innerHTML = `<p class="eyebrow" style="text-align:center">اليوم ${ar(d.n)} — ${fmtDate(d.date)}${late && !myRead().has(d.n) ? ' · هيتسجل متأخر' : ''}</p><h2>سفر التكوين</h2><div class="orn">الأصحاح ${ar(c)} · ${CH_TITLES[c - 1]}</div>
     <div class="text" style="--fs:${S.fs}px">${vs.map((v, i) => `<span class="v" data-v="${i + 1}" data-t="${esc(v)}"><sup>${ar(i + 1)}</sup>${esc(v)}</span> `).join('')}</div><div id="cquiz"></div>
     <div class="endread">${tab < d.ch.length - 1 ? `<a class="btn primary block" href="#/read/${d.n}/${tab + 1}">الأصحاح اللي بعده ←</a>` : (myRead().has(d.n) ? `<button class="btn done on block" disabled>${ICON.check} قريت اليوم ده</button>` : '<button class="btn red block readbtn" id="rdone">خلّصت… قريت ✓</button>')}
-    <p class="hint">دوس على أي آية عشان تختارها وتشاركها في «آيات لمستنا»</p></div>
-    <div class="selbar" id="selbar"><button class="btn light" id="share">✨ آية لمستني</button><button class="btn light" id="simg">🖼️ صورة</button><button class="btn ghost" id="copy">نسخ</button></div>`;
+    <p class="hint">دوس على أي آية عشان تختارها: تشاركها في «آيات لمستنا»، أو تسأل المسؤولين عنها</p></div>
+    <div class="selbar" id="selbar"><button class="btn light" id="share">✨ آية لمستني</button><button class="btn light" id="simg">🖼️ صورة</button><button class="btn light" id="sask">❓ اسأل</button><button class="btn ghost" id="copy">نسخ</button></div>`;
+  $$('body > .selbar').forEach((x) => x.remove()); document.body.appendChild($('#selbar')); // الشريط لازم يعيش برّه العنصر المتحرك عشان position:fixed يتحسب من الشاشة
   const sel = new Set(); const upd = () => $('#selbar').classList.toggle('show', sel.size > 0);
   $$('.v', chapEl).forEach((el) => el.addEventListener('click', () => { const k = +el.dataset.v; sel.has(k) ? sel.delete(k) : sel.add(k); el.classList.toggle('sel'); upd(); }));
   const selText = () => { const ks = [...sel].sort((a, b) => a - b); return { text: ks.map((k) => vs[k - 1]).join(' '), ref: `تكوين ${ar(c)}: ${ar(ks[0])}${ks.length > 1 ? '-' + ar(ks[ks.length - 1]) : ''}` }; };
   $('#share').onclick = async () => { const s = selText(); await api.post('verse', s.text, s.ref); toast('اتشاركت في «آيات لمستنا» ✨'); $$('.v.sel').forEach((x) => x.classList.replace('sel', 'mark')); sel.clear(); upd(); };
   $('#simg').onclick = async () => { const s = selText(); await shareVerseImage(s.text, s.ref); };
+  $('#sask').onclick = () => { const s = selText(); askModal(s); $$('.v.sel').forEach((x) => x.classList.remove('sel')); sel.clear(); upd(); };
   ttsSetup($('#tts'), $$('.v', chapEl));
   chapterQuiz($('#cquiz'), String(c), `تكوين ${ar(c)}`);
   const applyNight = () => document.body.classList.toggle('night', !!S.night); try { S.night = localStorage.getItem('ruh:night') === '1'; } catch (e) { /* ignore */ } applyNight();
@@ -210,22 +213,49 @@ function vPlan() {
   const tEl = $('.pday.today'); if (tEl) setTimeout(() => tEl.scrollIntoView({ block: 'center', behavior: reduce ? 'auto' : 'smooth' }), 300);
 }
 
-// ---------- آيات لمستنا ----------
+// ---------- آيات لمستنا / طلبات الصلاة / اسأل المسؤولين ----------
 const amenSet = () => { try { return new Set(JSON.parse(localStorage.getItem('ruh:amen') || '[]')); } catch (e) { return new Set(); } };
-function vWall() {
-  const tab = S.wallTab; const list = S.wall.filter((w) => w.type === tab).sort((a, b) => b.at - a.at); const am = amenSet();
-  APP.innerHTML = `<div class="view">${topbar()}<div class="hello"><h1>آيات لمستنا</h1><p>«احملوا بعضكم أثقال بعض»</p></div>
-  <div class="seg" role="tablist"><button class="${tab === 'verse' ? 'on' : ''}" data-t="verse">✨ آيات</button><button class="${tab === 'reflection' ? 'on' : ''}" data-t="reflection">✍️ تأملات</button></div>
-  <section class="card compose"><textarea id="ptext" maxlength="400" placeholder="${tab === 'verse' ? 'اكتب الآية اللي لمستك النهارده…' : 'اكتب تأمل قصير من قراءة النهارده…'}"></textarea>${tab === 'verse' ? '<input id="pref" maxlength="40" placeholder="الشاهد (مثلًا: تكوين ١: ٣)">' : ''}
-  <button class="btn primary block" id="psend" style="margin-top:10px">${tab === 'verse' ? 'شارك الآية' : 'شارك التأمل'}</button></section>
-  <div class="stagger">${list.length ? list.map((w) => `<article class="card post ${w.type}"><div class="who">${avatar(w.name)}<div class="grow"><b>${esc(w.name)}</b><div class="sub" style="font-size:12px">${timeAgo(w.at)}</div></div>${(w.userId === S.me.id || S.admin) ? `<button class="chip" data-del="${w.id}" aria-label="حذف">حذف</button>` : ''}</div>
-    <p class="txt ${w.type === 'verse' ? 'verse-q' : ''}">${w.type === 'verse' ? '«' + esc(w.text) + '»' : esc(w.text)}</p>${w.ref ? `<p class="ref">${esc(w.ref)}</p>` : ''}
-    <div class="foot"><span class="sub">${ar(w.amens || 0)} آمين</span><button class="amen ${am.has(w.id) ? 'did' : ''}" data-amen="${w.id}">${am.has(w.id) ? 'آمين ✓' : '🙏 آمين'}</button></div></article>`).join('')
-    : '<div class="card" style="text-align:center"><p class="muted">لسه مفيش حاجة هنا… كن أول واحد يشارك 🤍</p></div>'}</div>${foot()}</div>`;
-  $$('.seg button').forEach((b) => b.onclick = () => { S.wallTab = b.dataset.t; vWall(); });
-  $('#psend').onclick = async () => { const t = $('#ptext').value.trim(); if (t.length < 3) return toast('اكتب حاجة الأول 🙂'); $('#psend').disabled = true; await api.post(tab, t, $('#pref')?.value.trim()); toast('اتشاركت ✨'); };
+const PRAYER_VERSE = '<blockquote class="vp-text pverse"><p>«وَصَلُّوا بَعْضُكُمْ لأَجْلِ بَعْضٍ، لِكَيْ تُشْفَوْا. طَلِبَةُ الْبَارِّ تَقْتَدِرُ كَثِيرًا فِي فِعْلِهَا»</p><cite>يعقوب ٥: ١٦</cite></blockquote>';
+async function vWall(tabArg) {
+  if (['verse', 'prayer', 'ask'].includes(tabArg)) S.wallTab = tabArg;
+  if (!['verse', 'prayer', 'ask'].includes(S.wallTab)) S.wallTab = 'verse';
+  const tab = S.wallTab; const am = amenSet(); const myU = api.myUid();
+  const list = S.wall.filter((w) => (tab === 'verse' ? (w.type === 'verse' || w.type === 'reflection') : w.type === tab)).sort((a, b) => b.at - a.at);
+  const pending = (S.myq || []).filter((q) => q.status !== 'answered').length;
+  const mine = (w) => (w.uid ? w.uid === myU : w.userId === S.me.id);
+  const post = (w) => {
+    const anon = w.type === 'prayer'; const who = anon ? initialOf(w.name) : w.name;
+    return `<article class="card post ${w.type}"><div class="who">${anon ? `<span class="av anon" style="width:38px;height:38px;font-size:17px">${esc(who.replace('.', ''))}</span>` : avatar(w.name)}<div class="grow"><b>${esc(who)}</b><div class="sub" style="font-size:12px">${anon ? 'واحد من الأسرة، ' : ''}${timeAgo(w.at)}</div></div>${(mine(w) || S.admin) ? `<button class="chip" data-del="${w.id}" aria-label="حذف">حذف</button>` : ''}</div>
+    <p class="txt ${w.type === 'verse' ? 'verse-q' : ''}">${w.type === 'verse' ? '«' + esc(w.text) + '»' : esc(w.text)}</p>${w.ref ? `<p class="ref">${esc(w.ref)}</p>` : ''}${w.note ? `<p class="note">💭 ${esc(w.note)}</p>` : ''}
+    <div class="foot"><span class="sub">${ar(w.amens || 0)} ${anon ? 'صلّوا' : 'آمين'}</span><button class="amen ${am.has(w.id) ? 'did' : ''}" data-amen="${w.id}">${am.has(w.id) ? (anon ? 'صلّيت ✓' : 'آمين ✓') : (anon ? '🙏 صلّيت' : '🙏 آمين')}</button></div></article>`;
+  };
+  const compose = {
+    verse: `<section class="card compose"><h3 class="ch3">اختار الآية اللي لمستك</h3><div id="vpick"></div>
+      <input class="inp" id="pnote" maxlength="200" placeholder="ليه لمستك؟ (اختياري)" value="${esc(S.vpNote || '')}" style="margin-top:10px"><button class="btn primary block" id="psend" style="margin-top:10px">شارك الآية ✨</button></section>`,
+    prayer: `${PRAYER_VERSE}<section class="card compose"><textarea id="ptext" maxlength="400" placeholder="اكتب طلبتك… وإحنا هنصلّي لك">${esc(S.prayDraft || '')}</textarea><p class="hint" style="margin:6px 2px 0">🔒 اسمك مش هيظهر، هيظهر أول حرف منه بس.</p>
+      <button class="btn primary block" id="psend" style="margin-top:10px">اطلب صلاة</button></section>`,
+    ask: `<section class="card ask-cta"><div class="big">❓</div><h2>عندك سؤال أو محتاج تفسير لآية؟</h2><p class="sub">اسأل المسؤولين، والرد هيوصلك على الواتساب. سؤالك محدش بيشوفه غير المسؤولين.</p><button class="btn red block" id="ask">اسأل دلوقتي</button>
+      <p class="hint" style="margin-top:8px">ممكن كمان وإنت بتقرا: دوس على الآية واختار «❓ اسأل».</p></section><h3 class="ch3" style="margin:16px 4px 8px">أسئلتي</h3>`,
+  }[tab];
+  APP.innerHTML = `<div class="view">${topbar()}<div class="hello"><h1>الأسرة</h1><p>«احملوا بعضكم أثقال بعض»</p></div>
+  <div class="seg three" role="tablist"><button class="${tab === 'verse' ? 'on' : ''}" data-t="verse">✨ آيات لمستنا</button><button class="${tab === 'prayer' ? 'on' : ''}" data-t="prayer">🙏 طلبات صلاة</button><button class="${tab === 'ask' ? 'on' : ''}" data-t="ask">❓ اسأل${pending ? ` <i class="dot">${ar(pending)}</i>` : ''}</button></div>
+  ${compose}
+  <div class="stagger">${tab === 'ask' ? myQuestionsHTML(S.myq || []) : list.length ? list.map(post).join('') : '<div class="card" style="text-align:center"><p class="muted">لسه مفيش حاجة هنا… كن أول واحد يشارك 🤍</p></div>'}</div>${foot()}</div>`;
+  $$('.seg button').forEach((b) => b.onclick = () => { location.hash = '#/wall/' + b.dataset.t; });
   $$('[data-amen]').forEach((b) => b.onclick = async () => { const id = b.dataset.amen; const s = amenSet(); if (s.has(id)) return; s.add(id); localStorage.setItem('ruh:amen', JSON.stringify([...s])); vibrate(15); const r = b.getBoundingClientRect(); burst(r.left + r.width / 2, r.top, 30); await api.amen(id); });
   $$('[data-del]').forEach((b) => b.onclick = async () => { if (b.dataset.sure) { await api.removePost(b.dataset.del); toast('اتمسح'); } else { b.dataset.sure = '1'; b.textContent = 'متأكد؟'; b.style.color = 'var(--heart)'; setTimeout(() => { delete b.dataset.sure; b.textContent = 'حذف'; b.style.color = ''; }, 3000); } });
+  if (tab === 'ask') { $('#ask').onclick = () => askModal(); return; }
+  if (tab === 'prayer') {
+    $('#ptext').oninput = (e) => { S.prayDraft = e.target.value; };
+    $('#psend').onclick = async () => { const t = $('#ptext').value.trim(); if (t.length < 3) return toast('اكتب طلبتك الأول 🙂'); $('#psend').disabled = true; await api.post('prayer', t, ''); S.prayDraft = ''; $('#ptext').value = ''; $('#psend').disabled = false; toast('طلبتك وصلت… هنصلّي لك 🙏'); };
+    return;
+  }
+  const getVerse = await versePicker($('#vpick'), { keep: (S.vpWall = S.vpWall || {}) });
+  $('#pnote').oninput = (e) => { S.vpNote = e.target.value; };
+  $('#psend').onclick = async () => {
+    const v = getVerse(); if (!v || !v.text) return toast('اختار الآية الأول 🙂');
+    $('#psend').disabled = true; await api.post('verse', v.text, v.ref, $('#pnote').value.trim()); S.vpNote = ''; $('#pnote').value = ''; $('#psend').disabled = false; toast('اتشاركت ✨');
+  };
 }
 
 // ---------- أنا ----------
@@ -281,6 +311,7 @@ function vOnboard() {
 
 // ---------- الراوتر ----------
 function route() {
+  $$('body > .selbar').forEach((x) => x.remove());
   if (!S.me) return vOnboard();
   APP.classList.remove('full');
   { const rr = (location.hash || '#/today').split('/')[1]; NAV.hidden = rr === 'read' || rr === 'exam'; document.body.classList.toggle('reading', rr === 'read'); }
@@ -288,13 +319,14 @@ function route() {
   if (r === 'khadem' || r === 'servants') r = 'admin';
   try { speechSynthesis.cancel(); } catch (e) { /* ignore */ } if (r !== 'read') document.body.classList.remove('night');
   $$('#nav a').forEach((x) => x.classList.toggle('on', x.dataset.r === r || (r === 'read' && x.dataset.r === 'today') || (r === 'exam' && x.dataset.r === 'journey')));
-  const v = { today: vToday, read: () => vRead(a, b), journey: () => vJourney(a), plan: vPlan, wall: vWall, me: vMe, admin: () => vAdmin(a, b), exam: () => vExam(a) }[r] || vToday;
+  const v = { today: vToday, read: () => vRead(a, b), journey: () => vJourney(a), plan: vPlan, wall: () => vWall(a), me: vMe, admin: () => vAdmin(a, b), exam: () => vExam(a) }[r] || vToday;
   const same = S.lastRoute === location.hash; S.lastRoute = location.hash;
   v(); if (!same && r !== 'journey' && r !== 'plan' && r !== 'read') scrollTo(0, 0);
 }
-let rt; const rerender = (kinds) => () => { clearTimeout(rt); rt = setTimeout(() => { const r = (location.hash.split('/')[1] || 'today'); const sub = location.hash.split('/')[2]; if (r === 'admin' && ['bank', 'exams', 'word'].includes(sub)) return; if (S.me && kinds.includes(r) && !document.activeElement?.matches('input,textarea,select')) route(); }, 120); };
+let rt; const pendK = new Set(); const rerender = (kinds) => () => { kinds.forEach((k) => pendK.add(k)); clearTimeout(rt); rt = setTimeout(() => { const ks = new Set(pendK); pendK.clear(); const r = (location.hash.split('/')[1] || 'today'); const sub = location.hash.split('/')[2]; if (r === 'admin' && ['bank', 'exams', 'word', 'asks', 'reports'].includes(sub)) return; if (S.me && ks.has(r) && !document.activeElement?.matches('input,textarea,select')) route(); }, 120); };
 on('users', (u) => { S.users = u; if (S.me) { const m = u.find((x) => x.id === S.me.id); if (m) S.me = m; } rerender(['today', 'journey', 'plan', 'me', 'admin'])(); });
 on('wall', (w) => { S.wall = w; rerender(['wall', 'today'])(); });
+on('myq', (q) => { S.myq = q; rerender(['wall'])(); });
 on('days', (d) => { S.days = d; rerender(['today', 'admin'])(); });
 on('chq', (d) => { S.chq = d; rerender(['admin'])(); });
 on('exams', (d) => { S.exams = d; rerender(['today', 'journey', 'admin'])(); });

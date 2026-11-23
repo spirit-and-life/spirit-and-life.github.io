@@ -1,6 +1,6 @@
 // أسئلة الأصحاحات، الامتحانات، القراءة بالصوت، مشاركة آية كصورة، الشهادة
 import { ar, fmtDate, TOTAL, START, END } from './plan.js';
-import { api, examState } from './data.js';
+import { api, examState, QTYPES, qType, qPts } from './data.js';
 import { $, $$, esc, APP, S, reduce, toast, vibrate, meU, topbar, burst, ICON, foot } from './ui.js';
 import { shipURL } from './ship.js';
 import { cairoDate } from './stats.js';
@@ -64,24 +64,35 @@ export async function vExam(id) {
   if (st === 'soon') { APP.innerHTML = `<div class="view">${h}<section class="card result"><div class="big">⏳</div><h2>الامتحان لسه ما فتحش</h2><p class="sub">بيفتح ${fmtTime(e.openAt)}</p></section></div>`; return; }
   if (st !== 'open') { APP.innerHTML = `<div class="view">${h}<section class="card result"><div class="big">🔒</div><h2>الامتحان اتقفل</h2><p class="sub">النتيجة هتظهر في قائمة الشرف.</p></section></div>`; return; }
   APP.innerHTML = `<div class="view">${h}<section class="card exam-intro"><div class="big">📝</div><h2>${esc(e.title)}</h2>${e.desc ? `<p class="sub">${esc(e.desc)}</p>` : ''}
-    <ul class="rules"><li>${ar(e.questions.length)} سؤال اختيار من متعدد</li><li>تقدر تدخله مرة واحدة بس</li><li>الوقت بيتحسب، ولو اتساوت الدرجات الأسرع بيسبق</li>${e.closeAt ? `<li>بيقفل ${fmtTime(e.closeAt)}</li>` : ''}</ul>
+    <ul class="rules"><li>${ar(e.questions.length)} سؤال: ${Object.entries(QTYPES).map(([k, l]) => { const n = e.questions.filter((q) => qType(q) === k).length; return n ? `${l} ${ar(n)}` : ""; }).filter(Boolean).join("، ")}</li><li>الدرجة الكلية ${ar(e.questions.reduce((s, q) => s + qPts(q), 0))}</li><li>تقدر تدخله مرة واحدة بس</li><li>الوقت بيتحسب، ولو اتساوت الدرجات الأسرع بيسبق</li>${e.closeAt ? `<li>بيقفل ${fmtTime(e.closeAt)}</li>` : ''}</ul>
     <button class="btn red block" id="xgo">ابدأ الامتحان</button></section></div>`;
   $('#xgo').onclick = () => runExam(e, h);
 }
 function runExam(e, head) {
   const Q = e.questions; const ans = Array(Q.length).fill(null); let i = 0; const t0 = Date.now(); let tick;
+  const answered = (k) => { const a = ans[k]; return a !== null && a !== undefined && (typeof a !== 'string' || a.trim().length > 0); };
   const draw = () => {
-    const q = Q[i];
+    const q = Q[i]; const t = qType(q);
+    const body = {
+      mcq: () => `<div class="opts">${(q.options || []).map((o, k) => `<button class="opt ${ans[i] === k ? 'picked' : ''}" data-k="${k}"><span>${'أبجد'[k] || ar(k + 1)}</span>${esc(o)}</button>`).join('')}</div>`,
+      tf: () => `<div class="opts tf"><button class="opt ${ans[i] === true ? 'picked' : ''}" data-b="1"><span>✓</span>صح</button><button class="opt ${ans[i] === false ? 'picked' : ''}" data-b="0"><span>✗</span>خطأ</button></div>`,
+      fill: () => `<input class="inp xin" id="xa" maxlength="80" autocomplete="off" placeholder="اكتب الكلمة الناقصة" value="${esc(ans[i] || '')}">`,
+      essay: () => `<textarea class="inp xin" id="xa" rows="6" maxlength="1500" placeholder="اكتب إجابتك هنا…">${esc(ans[i] || '')}</textarea><p class="hint">المسؤولين هيصححوا الإجابة دي بإيديهم.</p>`,
+    }[t]();
+    const qtext = t === 'fill' ? esc(q.q).replace(/(…+|\.{3,}|_{3,})/g, '<span class="blank">……</span>') : esc(q.q);
     APP.innerHTML = `<div class="view">${head}<div class="xbar"><div class="xprog"><i style="width:${(i / Q.length) * 100}%"></i></div><span id="xt">٠:٠٠</span></div>
-    <section class="card xq"><p class="qn">سؤال ${ar(i + 1)} من ${ar(Q.length)}</p><p class="qq">${esc(q.q)}</p>
-    <div class="opts">${q.options.map((o, k) => `<button class="opt ${ans[i] === k ? 'picked' : ''}" data-k="${k}"><span>${'أبجد'[k] || ar(k + 1)}</span>${esc(o)}</button>`).join('')}</div>
-    <div class="actions">${i > 0 ? '<button class="btn ghost" id="xp">السابق</button>' : ''}<button class="btn ${i === Q.length - 1 ? 'red' : 'primary'}" id="xn" ${ans[i] == null ? 'disabled' : ''}>${i === Q.length - 1 ? 'سلّم الإجابات' : 'التالي'}</button></div></section></div>`;
-    $$('.opt').forEach((b) => b.onclick = () => { ans[i] = +b.dataset.k; $$('.opt').forEach((x) => x.classList.toggle('picked', x === b)); $('#xn').disabled = false; vibrate(10); });
+    <section class="card xq"><p class="qn">سؤال ${ar(i + 1)} من ${ar(Q.length)} <span class="qt">${QTYPES[t]}، ${ar(qPts(q))} ${qPts(q) > 2 && qPts(q) < 11 ? 'درجات' : 'درجة'}</span></p><p class="qq">${qtext}</p>
+    ${body}
+    <div class="actions">${i > 0 ? '<button class="btn ghost" id="xp">السابق</button>' : ''}<button class="btn ${i === Q.length - 1 ? 'red' : 'primary'}" id="xn" ${answered(i) ? '' : 'disabled'}>${i === Q.length - 1 ? 'سلّم الإجابات' : 'التالي'}</button></div></section></div>`;
+    const pick = (b, v) => { ans[i] = v; $$('.opt').forEach((x) => x.classList.toggle('picked', x === b)); $('#xn').disabled = false; vibrate(10); };
+    $$('.opt[data-k]').forEach((b) => b.onclick = () => pick(b, +b.dataset.k));
+    $$('.opt[data-b]').forEach((b) => b.onclick = () => pick(b, b.dataset.b === '1'));
+    const xa = $('#xa'); if (xa) { xa.oninput = () => { ans[i] = xa.value; $('#xn').disabled = !answered(i); }; if (t === 'fill') xa.onkeydown = (ev) => { if (ev.key === 'Enter' && answered(i)) $('#xn').click(); }; setTimeout(() => xa.focus(), 60); }
     $('#xp') && ($('#xp').onclick = () => { i--; draw(); });
     $('#xn').onclick = async () => {
       if (i < Q.length - 1) { i++; draw(); return; }
       clearInterval(tick); $('#xn').disabled = true; const dur = Math.round((Date.now() - t0) / 1000);
-      const ok = await api.submitExam(e.id, ans, dur);
+      const ok = await api.submitExam(e.id, ans.map((a) => (typeof a === 'string' ? a.trim() : a)), dur);
       APP.innerHTML = `<div class="view">${head}<section class="card result"><div class="big">${ok ? '✅' : '⚠️'}</div><h2>${ok ? 'إجاباتك اتسلّمت' : 'مقدرناش نسلّم الإجابات'}</h2><p class="sub">${ok ? 'النتيجة وقائمة الشرف هيظهروا أول ما المسؤولين يعلنوها.' : 'يمكن الامتحان اتقفل أو سلّمته قبل كده.'}</p><a class="btn primary block" href="#/today" style="margin-top:14px">رجوع للنهارده</a></section></div>`;
       if (ok) burst(innerWidth / 2, 220, 100);
     };
