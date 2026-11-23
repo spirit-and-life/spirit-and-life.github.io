@@ -68,8 +68,18 @@ service cloud.firestore {
         && (!('ref' in request.resource.data) || (request.resource.data.ref is string && request.resource.data.ref.size() <= 40))
         && (!('note' in request.resource.data) || (request.resource.data.note is string && request.resource.data.note.size() <= 200))
         && request.resource.data.amens == 0;
-      allow update: if signedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['amens'])
-        && request.resource.data.amens == resource.data.amens + 1;
+      // تعديل واحد من اتنين: زيادة amens بواحد (صلّيت)، أو تفاعلك أنت بس في reacts
+      allow update: if signedIn() && (
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['amens'])
+          && request.resource.data.amens == resource.data.amens + 1)
+        || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reacts'])
+          && request.resource.data.reacts.diff(resource.data.get('reacts', {})).affectedKeys().hasOnly([request.auth.uid])
+          && (!(request.auth.uid in request.resource.data.reacts)
+              || (request.resource.data.reacts[request.auth.uid].keys().hasOnly(['t','n'])
+                  && request.resource.data.reacts[request.auth.uid].t in ['amen','love','fire','light','strong','tears']
+                  && request.resource.data.reacts[request.auth.uid].n is string
+                  && request.resource.data.reacts[request.auth.uid].n.size() <= 40)))
+      );
       allow delete: if isServant() || (signedIn() && resource.data.uid == request.auth.uid);
     }
     // المسؤولين: بكود بيتحدد مرة واحدة، وبعد كده بيتغيّر من Firebase بس

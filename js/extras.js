@@ -41,6 +41,21 @@ export async function versePicker(host, { optional = false, keep = {} } = {}) {
   return () => { if (!st.on) return null; const vs = T[st.ch]; return { ch: st.ch, from: st.from, to: st.to, text: vs.slice(st.from - 1, st.to).join(' '), ref: refOf(st.ch, st.from, st.to) }; };
 }
 
+// شارك آية لمستك: اختيار الآية في نافذة لوحدها، فصفحة الأسرة نفسها ما بتحمّلش نص الكتاب
+export async function verseModal() {
+  const m = document.createElement('div'); m.className = 'modal';
+  m.innerHTML = `<div class="box ask-box"><h2>✨ شارك آية لمستك</h2><div id="vmp"><p class="muted" style="text-align:center">بنحمّل الكتاب…</p></div>
+    <input class="inp" id="vmn" maxlength="200" placeholder="ليه لمستك؟ (اختياري)" style="margin-top:10px">
+    <div class="actions"><button class="btn primary" id="vms">شارك ✨</button><button class="btn ghost" id="vmc">إلغاء</button></div></div>`;
+  document.body.appendChild(m); const close = () => m.remove(); m.onclick = (e) => { if (e.target === m) close(); }; $('#vmc', m).onclick = close;
+  let get = null;
+  try { get = await versePicker($('#vmp', m), { keep: (S.vpWall = S.vpWall || {}) }); } catch (e) { console.warn(e); $('#vmp', m).innerHTML = '<p class="muted" style="text-align:center">مقدرناش نحمّل الكتاب، جرّب تاني.</p>'; }
+  $('#vms', m).onclick = async () => {
+    const v = get && get(); if (!v || !v.text) return toast('اختار الآية الأول 🙂');
+    $('#vms', m).disabled = true; await api.post('verse', v.text, v.ref, $('#vmn', m).value.trim()); close(); toast('اتشاركت ✨'); burst(innerWidth / 2, innerHeight / 2, 50);
+  };
+}
+
 // اسأل المسؤولين: سؤال أو تفسير آية، والرد بيوصل على الواتساب
 export async function askModal(pre) {
   const m = document.createElement('div'); m.className = 'modal';

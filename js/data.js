@@ -72,6 +72,15 @@ export function buildResults(exam, key, subs) {
   return subs.map((s) => { const r = scoreSub(exam, key, s); return { name: s.name, id: s.userId, score: r.score, total: r.total, pending: r.pending, dur: s.dur || 0, at: ms(s.at) || 0 }; })
     .sort((a, b) => b.score - a.score || a.dur - b.dur || a.at - b.at);
 }
+// تفاعلات «آيات لمستنا»: كل تفاعل عبارة من الكتاب
+export const REACTS = [
+  { k: 'amen', e: '🙏', t: 'آمين', v: '«آمِينَ. تَعَالَ أَيُّهَا الرَّبُّ يَسُوعُ» (رؤ ٢٢: ٢٠)' },
+  { k: 'love', e: '❤️', t: 'لمستني', v: '«مَا أَحْلَى قَوْلَكَ لِحَنَكِي» (مز ١١٩: ١٠٣)' },
+  { k: 'fire', e: '🔥', t: 'ألهبت قلبي', v: '«أَلَمْ يَكُنْ قَلْبُنَا مُلْتَهِبًا فِينَا» (لو ٢٤: ٣٢)' },
+  { k: 'light', e: '💡', t: 'نوّرتني', v: '«سِرَاجٌ لِرِجْلِي كَلَامُكَ وَنُورٌ لِسَبِيلِي» (مز ١١٩: ١٠٥)' },
+  { k: 'strong', e: '💪', t: 'قوّتني', v: '«أَسْتَطِيعُ كُلَّ شَيْءٍ فِي الْمَسِيحِ الَّذِي يُقَوِّينِي» (في ٤: ١٣)' },
+  { k: 'tears', e: '😢', t: 'بكّتتني', v: '«فَلَمَّا سَمِعُوا نُخِسُوا فِي قُلُوبِهِمْ» (أع ٢: ٣٧)' },
+];
 export const initialOf = (n) => { const c = String(n || '').trim()[0]; return c ? c + '.' : '؟'; };
 
 let impl = null;
@@ -142,6 +151,7 @@ function demoImpl() {
     myUid,
     async post(type, text, ref, note) { const u = me(); const anon = type === 'prayer'; memo.wall.push({ id: 'w' + Date.now(), type, text, ref: ref || '', note: note || '', name: anon ? initialOf(u.name) : u.name, userId: anon ? '' : u.id, uid: myUid(), at: Date.now(), amens: 0 }); save(); all(); },
     async amen(id) { const w = memo.wall.find((x) => x.id === id); if (w) { w.amens = (w.amens || 0) + 1; save(); all(); } },
+    async react(id, k) { const w = memo.wall.find((x) => x.id === id); if (!w) return true; const r = { ...(w.reacts || {}) }; const u = myUid(); if (!k) delete r[u]; else r[u] = { t: k, n: me().name }; w.reacts = r; save(); all(); return true; },
     async removePost(id) { memo.wall = memo.wall.filter((x) => x.id !== id); save(); all(); },
     async isServant() { return !!store.get('servant', false); },
     async unlock(code) { if (code === store.get('demo_code', '2026')) { store.set('servant', true); return true; } return false; },
@@ -223,6 +233,7 @@ async function firebaseImpl() {
     myUid: () => uid,
     async post(type, text, ref, note) { const u = me(); const anon = type === 'prayer'; await F.addDoc(F.collection(db, 'wall'), { type, text, ref: ref || '', note: note || '', name: anon ? initialOf(u.name) : u.name, userId: anon ? '' : myId, uid, at: F.serverTimestamp(), amens: 0 }); },
     async amen(id) { await F.updateDoc(F.doc(db, 'wall', id), { amens: F.increment(1) }); },
+    async react(id, k) { try { await F.updateDoc(F.doc(db, 'wall', id), { [`reacts.${uid}`]: k ? { t: k, n: me().name } : F.deleteField() }); return true; } catch (e) { console.warn(e); return false; } },
     async removePost(id) { await F.deleteDoc(F.doc(db, 'wall', id)); },
     async isServant() { try { return (await F.getDoc(F.doc(db, 'admins', uid))).exists(); } catch (e) { return false; } },
     async unlock(code) { try { await F.setDoc(F.doc(db, 'admins', uid), { code, at: F.serverTimestamp() }); return true; } catch (e) { return false; } },

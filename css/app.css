@@ -481,3 +481,22 @@ details summary{cursor:pointer}.exam-admin .xacts{display:flex;gap:8px;flex-wrap
 .rprev .box{max-width:520px;text-align:right}
 .rpages{display:grid;gap:10px;max-height:58vh;overflow:auto;margin:12px 0;padding:8px;background:var(--mist);border-radius:14px}
 .rpages img{width:100%;border-radius:4px;box-shadow:0 4px 14px rgba(6,26,51,.25)}
+/* ---- الأسرة v3: نافذة المشاركة + تفاعلات من الكتاب ---- */
+.compose-cta{display:flex!important;align-items:center;gap:12px;width:100%;text-align:right;font:inherit;border:2px dashed var(--wave)!important;background:var(--foam);cursor:pointer;color:var(--ink)}
+.compose-cta .ei{font-size:28px}.compose-cta b{display:block;color:var(--deep);font-size:17px}.compose-cta small{display:block;color:var(--muted);font-size:12.5px}
+.compose-cta .plus{width:40px;height:40px;border-radius:50%;background:var(--sail);color:#fff;display:grid;place-items:center;font-size:22px;font-weight:800;flex:none}
+.card.post{overflow:visible}
+.rbar{display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding-top:8px;border-top:1px solid var(--mist)}
+.rsum{display:flex;align-items:center;gap:6px;background:none;border:none;font:inherit;font-weight:700;color:var(--muted);font-size:14px;padding:6px 2px}
+.rsum .re{font-size:18px;letter-spacing:-3px}
+.rbtn{min-height:38px;padding:0 16px;border-radius:99px;border:1.5px solid var(--mist);background:#fff;font:inherit;font-weight:700;font-size:14px;color:var(--sail)}
+.rbtn.on{background:#FFF4D6;border-color:var(--lantern);color:#7a5a12}
+.rpick{position:absolute;left:10px;right:10px;bottom:54px;z-index:5;display:flex;justify-content:space-between;gap:2px;background:#fff;border-radius:22px;padding:8px 6px;box-shadow:0 14px 40px -10px rgba(2,48,74,.45);border:1px solid var(--mist);animation:rpin .25s var(--ease)}
+.rpick button{flex:1;display:grid;justify-items:center;gap:2px;background:none;border:none;font:inherit;padding:4px 0;border-radius:14px;animation:rpop2 .35s var(--ease) both;animation-delay:var(--d)}
+.rpick button span{font-size:28px;line-height:1.1;transition:transform .15s}.rpick button small{font-size:10.5px;font-weight:700;color:var(--muted);white-space:nowrap}
+.rpick button:active span,.rpick button.on span{transform:scale(1.25)}.rpick button.on{background:#FFF4D6}
+@keyframes rpin{from{opacity:0;transform:translateY(8px) scale(.96)}}
+@keyframes rpop2{from{opacity:0;transform:translateY(10px) scale(.6)}}
+.whobox{text-align:right!important}.whobox h2{text-align:center}.whog{margin-top:12px}.whog p{margin:0 0 6px}.whog small{display:block;font-family:var(--f-verse);font-size:14px;color:var(--sail)}
+.whog .chip{display:inline-block;margin:0 0 6px 6px}
+@media (prefers-reduced-motion:reduce){.rpick,.rpick button{animation:none}}

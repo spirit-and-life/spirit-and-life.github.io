@@ -24,7 +24,12 @@ export function vibrate(p) { try { navigator.vibrate && navigator.vibrate(p); } 
 export const meU = () => S.users.find((x) => x.id === S.me?.id) || S.me;
 export const myRead = () => new Set((meU() && meU().readDays) || []);
 export function greeting() { const h = +new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Cairo', hour: 'numeric', hour12: false }).format(new Date()); return h < 12 ? 'صباح الخير' : h < 17 ? 'نهارك سعيد' : 'مساء الخير'; }
-export async function loadText() { if (!S.text) S.text = await (await fetch('data/genesis.json')).json(); return S.text; }
+let textP = null; // تحميل واحد مشترك مهما طلبه أكتر من مكان في نفس الوقت، ولو فشل نقدر نحاول تاني
+export async function loadText() {
+  if (S.text) return S.text;
+  if (!textP) textP = fetch('data/genesis.json').then((r) => { if (!r.ok) throw new Error('text ' + r.status); return r.json(); }).then((t) => (S.text = t)).catch((e) => { textP = null; throw e; });
+  return textP;
+}
 export const plural = (n, one, few, many) => (n >= 3 && n <= 10 ? few : (n === 2 ? many || one : one));
 
 export const ICON = {
