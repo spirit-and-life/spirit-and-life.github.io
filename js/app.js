@@ -11,7 +11,10 @@ import { DEFS, ICO, shipMark, NIGHT, lamp, wellSVG, introLayers, seaWaves, stars
 document.body.insertAdjacentHTML('afterbegin', DEFS);
 
 // ---------- تسجيل القراءة ----------
+// يوم لسه ماجاش معادُه؟ (الجمعة مش يوم قراءة أصلًا)
+const notYet = (n) => { const dd = DAYS.find((x) => x.n === n); return !!dd && dd.date > todayCairo(); };
 async function markRead(n, btn) {
+  if (notYet(n)) { toast('اليوم ده لسه ماجاش معاده… هتقدر تسجّله في ' + fmtDate(DAYS.find((x) => x.n === n).date) + ' 🙂'); return; }
   const before = new Set(myRead()); if (before.has(n)) return;
   const r = btn?.getBoundingClientRect(); if (r) burst(r.left + r.width / 2, r.top + r.height / 2);
   btn?.classList.add('pop'); vibrate([18, 40, 30]);
@@ -178,9 +181,9 @@ async function vRead(n, tab = 0) {
   const T = await loadText(); const c = d.ch[tab]; const vs = T[c];
   const chapEl = $('#chap'); if (!chapEl) return;
   const late = d.date < todayCairo();
-  chapEl.innerHTML = `<p class="eyebrow" style="text-align:center">اليوم ${ar(d.n)} — ${fmtDate(d.date)}${late && !myRead().has(d.n) ? ' · هيتسجل متأخر' : ''}</p><h2>سفر التكوين</h2><div class="orn">الأصحاح ${ar(c)} · ${CH_TITLES[c - 1]}</div>
+  chapEl.innerHTML = `<p class="eyebrow" style="text-align:center">اليوم ${ar(d.n)} — ${fmtDate(d.date)}${late && !myRead().has(d.n) ? ' · هيتسجل متأخر' : ''}${notYet(d.n) ? ' · لسه ماجاش معاده (معاينة بس)' : ''}</p><h2>سفر التكوين</h2><div class="orn">الأصحاح ${ar(c)} · ${CH_TITLES[c - 1]}</div>
     <div class="text" style="--fs:${S.fs}px">${vs.map((v, i) => `<span class="v" data-v="${i + 1}" data-t="${esc(v)}"><sup>${ar(i + 1)}</sup>${esc(v)}</span> `).join('')}</div><div id="cquiz"></div>
-    <div class="endread">${tab < d.ch.length - 1 ? `<a class="btn primary block" href="#/read/${d.n}/${tab + 1}">الأصحاح اللي بعده ←</a>` : (myRead().has(d.n) ? `<button class="btn done on block" disabled>${ICON.check} قريت اليوم ده</button>` : '<button class="btn red block readbtn" id="rdone">خلّصت… قريت ✓</button>')}
+    <div class="endread">${tab < d.ch.length - 1 ? `<a class="btn primary block" href="#/read/${d.n}/${tab + 1}">الأصحاح اللي بعده ←</a>` : (myRead().has(d.n) ? `<button class="btn done on block" disabled>${ICON.check} قريت اليوم ده</button>` : notYet(d.n) ? `<button class="btn ghost block" disabled>التسجيل بيتفتح ${fmtDate(d.date)}</button>` : '<button class="btn red block readbtn" id="rdone">خلّصت… قريت ✓</button>')}
     <p class="hint">دوس على أي آية عشان تختارها: تشاركها في «آيات لمستنا»، أو تسأل المسؤولين عنها</p></div>
     <div class="selbar" id="selbar"><button class="btn light" id="share">✨ آية لمستني</button><button class="btn light" id="simg">🖼️ صورة</button><button class="btn light" id="sask">❓ اسأل</button><button class="btn ghost" id="copy">نسخ</button></div>`;
   $$('body > .selbar').forEach((x) => x.remove()); document.body.appendChild($('#selbar')); // الشريط لازم يعيش برّه العنصر المتحرك عشان position:fixed يتحسب من الشاشة
@@ -191,7 +194,7 @@ async function vRead(n, tab = 0) {
   $('#simg').onclick = async () => { const s = selText(); await shareVerseImage(s.text, s.ref); };
   $('#sask').onclick = () => { const s = selText(); askModal(s); $$('.v.sel').forEach((x) => x.classList.remove('sel')); sel.clear(); upd(); };
   ttsSetup($('#tts'), $$('.v', chapEl));
-  chapterQuiz($('#cquiz'), String(c), `تكوين ${ar(c)}`);
+  if (notYet(d.n)) $('#cquiz').innerHTML = `<section class="card quiz done"><h2>اختبر نفسك</h2><p class="sub">الأسئلة بتفتح يوم ${fmtDate(d.date)}، مع قراية اليوم.</p></section>`; else chapterQuiz($('#cquiz'), String(c), `تكوين ${ar(c)}`);
   const applyNight = () => document.body.classList.toggle('night', !!S.night); try { S.night = localStorage.getItem('ruh:night') === '1'; } catch (e) { /* ignore */ } applyNight();
   $('#night').onclick = () => { S.night = !S.night; applyNight(); try { localStorage.setItem('ruh:night', S.night ? '1' : '0'); } catch (e) { /* ignore */ } };
   $('#copy').onclick = async () => { const s = selText(); try { await navigator.clipboard.writeText(`«${s.text}» (${s.ref})`); toast('اتنسخت'); } catch (e) { toast('مش قادر أنسخ هنا'); } };
