@@ -85,3 +85,13 @@ export function myQuestionsHTML(list) {
     ${q.ref ? `<p class="ref" style="margin-top:8px">${esc(q.ref)}</p>` : ''}<p class="txt">${esc(q.text)}</p>
     ${q.status === 'answered' ? `<small class="muted">ردّ عليك ${esc(q.answeredBy || 'واحد من المسؤولين')} على الواتساب${q.answeredAt ? '، ' + timeAgo(q.answeredAt) : ''}</small>` : '<small class="muted">هيوصلك الرد على الواتساب</small>'}</article>`).join('');
 }
+
+// اختيار آية من الكتاب لاستخدامها في سؤال «رتّب الآية» (للمسؤولين)
+export async function pickVerse(done) {
+  const m = document.createElement('div'); m.className = 'modal';
+  m.innerHTML = `<div class="box ask-box"><h2>📖 هات الآية من الكتاب</h2><div id="pvp"><p class="muted" style="text-align:center">بنحمّل الكتاب…</p></div>
+    <div class="actions"><button class="btn primary" id="pvu">استخدم الآية دي</button><button class="btn ghost" id="pvc">إلغاء</button></div></div>`;
+  document.body.appendChild(m); const close = () => m.remove(); m.onclick = (e) => { if (e.target === m) close(); }; $('#pvc', m).onclick = close;
+  let get = null; try { get = await versePicker($('#pvp', m), { keep: {} }); } catch (e) { $('#pvp', m).innerHTML = '<p class="muted" style="text-align:center">مقدرناش نحمّل الكتاب، جرّب تاني.</p>'; }
+  $('#pvu', m).onclick = () => { const v = get && get(); if (!v || !v.text) return toast('اختار الآية الأول'); close(); done(v.text); };
+}

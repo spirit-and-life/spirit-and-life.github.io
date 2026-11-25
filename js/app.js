@@ -1,4 +1,4 @@
-import { setClockOffset, DAYS, TOTAL, START, END, CHRISTMAS, BADGES, CH_TITLES, ar, fmtDate, todayCairo, status, dueDays, streak, chLabel, dayTitle, diffDays, addDays, weekday, keyVerse, weekOf } from './plan.js';
+import { setClockOffset, DAYS, TOTAL, START, END, BADGES, CH_TITLES, ar, fmtDate, todayCairo, status, dueDays, streak, chLabel, dayTitle, diffDays, addDays, weekday, keyVerse, weekOf } from './plan.js';
 import { init, api, on, mode, normPhone, validPhone, initialOf, REACTS } from './data.js';
 import { askModal, myQuestionsHTML, verseModal } from './extras.js';
 import { $, $$, esc, APP, NAV, S, reduce, first, avatar, timeAgo, toast, vibrate, myRead, meU, greeting, loadText, ICON, topbar, foot, burst, plural } from './ui.js';
@@ -119,9 +119,9 @@ function nudgeHTML() {
   return `<a class="nudge" href="#/journey/sea">✨ فاضلك ${ar(nb.left)} ${plural(nb.left, 'يوم', 'أيام')} على شارة «${nb.name}»</a>`;
 }
 function countdownHTML() {
-  const t = todayCairo(); const d = diffDays(t, CHRISTMAS); if (d < 0) return '';
+  const t = todayCairo(); const d = diffDays(t, END); if (d < 0) return '';
   const left = DAYS.filter((x) => x.date >= t).length;
-  return `<section class="card"><p class="eyebrow">على عيد الميلاد المجيد</p><div class="count"><div><b>${ar(d)}</b><span>يوم على العيد</span></div><div><b>${ar(left)}</b><span>يوم قراءة فاضل</span></div><div><b>${ar(myRead().size)}</b><span>من ${ar(TOTAL)} قريتهم</span></div></div></section>`;
+  return `<section class="card"><p class="eyebrow">على نهاية الرحلة · ${fmtDate(END, true)}</p><div class="count"><div><b>${ar(d)}</b><span>يوم على الميناء الأخير</span></div><div><b>${ar(left)}</b><span>يوم قراءة فاضل</span></div><div><b>${ar(myRead().size)}</b><span>من ${ar(TOTAL)} قريتهم</span></div></div></section>`;
 }
 function missedHTML() {
   const r = myRead(); const t = todayCairo(); const miss = dueDays(t).filter((d) => d.date < t && !r.has(d.n));
@@ -148,6 +148,9 @@ function vToday() {
     well = wellCard(done);
   } else if (st.phase === 'before') {
     hero = `<section class="hero"><div class="stars" aria-hidden="true">${starsHTML(26, 55)}</div><div class="eyebrow">الرحلة لسه هتبدأ</div><h2>فاضل ${ar(st.daysLeft)} ${plural(st.daysLeft, 'يوم', 'أيام')}</h2><div class="sub">البداية ${fmtDate(START, true, true)} من سفر التكوين</div>${scene}</section>`;
+    well = wellCard(false);
+  } else if (st.phase === 'rest') {
+    hero = `<section class="hero"><div class="stars" aria-hidden="true">${starsHTML(26, 55)}</div><div class="eyebrow">${fmtDate(todayCairo())}</div><h2>النهارده راحة</h2><div class="sub">مفيش أصحاح في يوم الجمعة. بكرة نكمل: ${st.next ? `${chLabel(st.next)} — ${dayTitle(st.next)}` : ''}</div>${scene}${st.prev && !r.has(st.prev.n) ? `<div class="ctas"><a class="btn glass" href="#/read/${st.prev.n}">كمّل ${chLabel(st.prev)}</a></div>` : ''}</section>`;
     well = wellCard(false);
   } else {
     hero = `<section class="hero"><div class="stars" aria-hidden="true">${starsHTML(26, 55)}</div><div class="eyebrow">الرحلة خلصت</div><h2>كل سنة وانت طيب ✨</h2><div class="sub">قريت ${ar(r.size)} من ${ar(TOTAL)} يوم</div>${scene}<div class="ctas"><a class="btn glass" href="#/me">شوف شهادتك</a></div></section>`;
@@ -208,7 +211,7 @@ function vPlan() {
     html += `<a class="pday ${cls}" href="#/read/${x.n}"><span class="n">${ar(x.n)}</span><span class="t"><b>${chLabel(x)} — ${dayTitle(x)}</b><small>${fmtDate(x.date)}${r.has(x.n) && readState(meU(), x.n) === 'late' ? ' <i class="latepill">قريته متأخر</i>' : ''}</small></span>${cls === 'done' ? `<span class="check">${ICON.check}</span>` : cls === 'missed' ? '<span class="st">كمّله</span>' : cls === 'today' ? '<span class="st">النهارده</span>' : ''}</a>`;
   });
   html += '</div>';
-  APP.innerHTML = `<div class="view">${topbar()}<div class="hello"><h1>الخطة كلها</h1><p>${ar(TOTAL)} يوم من ${fmtDate(START, false)} لحد ${fmtDate(END, false, true)}، من غير إجازات</p></div>
+  APP.innerHTML = `<div class="view">${topbar()}<div class="hello"><h1>الخطة كلها</h1><p>${ar(TOTAL)} يوم من ${fmtDate(START, false)} لحد ${fmtDate(END, false, true)}، وبنرتاح يوم الجمعة</p></div>
   <div class="card" style="padding:14px 16px"><div class="between"><span class="sub">قريت</span><b>${ar(r.size)} / ${ar(TOTAL)}</b></div><div class="prog light"><i style="width:${(r.size / TOTAL) * 100}%"></i></div></div>${html}${foot()}</div>`;
   const tEl = $('.pday.today'); if (tEl) setTimeout(() => tEl.scrollIntoView({ block: 'center', behavior: reduce ? 'auto' : 'smooth' }), 300);
 }

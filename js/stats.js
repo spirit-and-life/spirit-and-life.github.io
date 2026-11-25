@@ -26,10 +26,10 @@ export function userStats(u, today = todayCairo()) {
 // مستوى الفنار (١–٥): بيزيد مع الالتزام، والقراءة المتأخرة بنص نقطة
 export function lampLevel(s) {
   const score = s.onTime + s.late * 0.5;
-  return score >= 27 ? 5 : score >= 14 ? 4 : score >= 7 ? 3 : score >= 1 ? 2 : 1;
+  return score >= 30 ? 5 : score >= 14 ? 4 : score >= 7 ? 3 : score >= 1 ? 2 : 1;
 }
 export const LAMP_NAMES = ['مطفي', 'شرارة', 'فانوس', 'مصباح ساطع', 'فنار'];
-export const LAMP_HINTS = ['لسه ما بدأش', '١–٦ أيام', '٧–١٣ يوم', '١٤–٢٦ يوم', '٢٧ يوم فأكتر'];
+export const LAMP_HINTS = ['لسه ما بدأش', '١–٦ أيام', '٧–١٣ يوم', '١٤–٢٩ يوم', '٣٠ يوم فأكتر'];
 
 // الأسبوع = من السبت للجمعة (اليوم الأول سبت)
 export function weekRange(today = todayCairo()) {

@@ -1,6 +1,6 @@
 // تقارير مفصلة للمسؤولين، بتتنزل PDF (صفحات A4 بتترسم في المتصفح وبتتحط في ملف)
 import { DAYS, ar, fmtDate, todayCairo, dueDays, chLabel, dayTitle, CH_TITLES } from './plan.js';
-import { api, scoreSub, gradeOne, buildResults, QTYPES, qType, qPts } from './data.js';
+import { api, scoreSub, gradeOne, buildResults, QTYPES, qType, qPts, ansLabel, keyLabel } from './data.js';
 import { $, $$, esc, S, toast } from './ui.js';
 import { readState, cairoDate, weekRange } from './stats.js';
 import { shipURL } from './ship.js';
@@ -117,7 +117,7 @@ async function personBlocks(R) {
     const r = scoreSub(e, key, sub);
     B.push({ table: { title: `امتحان: ${e.title}`, note: `الدرجة ${ar(r.score)} من ${ar(r.total)}${i >= 0 ? `، الترتيب ${ar(i + 1)} من ${ar(res.length)}` : ''}${r.pending ? `، فيه ${ar(r.pending)} مقالي لسه متصححش` : ''}`, head: ['#', 'السؤال', 'إجابته', 'الدرجة'],
       rows: e.questions.map((q, k) => { const g = gradeOne(q, key[k], sub.answers?.[k], sub.grades?.[k]); const a = sub.answers?.[k]; const t = qType(q);
-        const at = a == null || a === '' ? '<span class="muted">ماجاوبش</span>' : t === 'mcq' ? esc(q.options[a]) : t === 'tf' ? (a ? 'صح' : 'خطأ') : esc(a);
+        const at = a == null || a === '' ? '<span class="muted">ماجاوبش</span>' : esc(ansLabel(q, a));
         return [ar(k + 1), `<small class="muted">${QTYPES[t]}</small><br>${esc(q.q)}`, at, g.pending ? '<b class="s-la">مستني</b>' : `<b class="${g.got === g.max ? 's-ok' : g.got ? 's-la' : 's-no'}">${ar(g.got)}/${ar(g.max)}</b>`]; }), widths: [5, 45, 38, 12] } });
   });
   if (myq.length) B.push({ table: { title: 'أسئلته للمسؤولين', head: ['إمتى', 'السؤال', 'الحالة'], rows: myq.map((q) => [when(q.at), `${q.ref ? `<small class="ref">${esc(q.ref)}</small><br>` : ''}${esc(q.text)}`, q.status === 'answered' ? '<b class="s-ok">اتردّ</b>' : '<b class="s-la">مستني</b>']), widths: [22, 60, 18] } });
@@ -135,8 +135,8 @@ async function examBlocks(R) {
     rows: res.map((r, i) => [ar(i + 1), `<b>${esc(r.name)}</b>${r.pending ? ' <small class="s-la">(فيه مقالي مستني)</small>' : ''}`, `<span dir="ltr">${esc(phoneById(r.id))}</span>`, `${ar(r.score)}/${ar(r.total)}`, `${ar(pc(r.score, r.total))}٪ ${bar(pc(r.score, r.total))}`, r.dur ? `${ar(Math.floor(r.dur / 60))}:${ar(String(r.dur % 60).padStart(2, '0'))}` : '—', when(r.at)]), widths: [5, 23, 15, 10, 19, 9, 19] } });
   B.push({ table: { title: 'تحليل الأسئلة', note: 'متوسط الدرجة اللي خدوها في كل سؤال. السؤال اللي نسبته قليلة محتاج شرح.', head: ['#', 'السؤال', 'النوع', 'متوسط الدرجة', 'تفاصيل'],
     rows: e.questions.map((q, k) => { const t = qType(q); let full = 0, any = 0; const dist = {};
-      subs.forEach((s) => { const g = gradeOne(q, key[k], s.answers?.[k], s.grades?.[k]); if (!g.pending) { any += g.max; full += g.got; } const a = s.answers?.[k]; if (t === 'mcq' || t === 'tf') dist[String(a)] = (dist[String(a)] || 0) + 1; });
-      const det = t === 'mcq' ? q.options.map((o, j) => `${j === key[k] ? '✓ ' : ''}${esc(o)}: ${ar(dist[String(j)] || 0)}`).join('<br>') : t === 'tf' ? `صح: ${ar(dist.true || 0)}، خطأ: ${ar(dist.false || 0)}` : t === 'fill' ? `الإجابة: ${esc(key[k])}` : `بيتصحح بالإيد${subs.some((x) => gradeOne(q, key[k], x.answers?.[k], x.grades?.[k]).pending) ? '، فيه لسه مستني' : ''}`;
+      subs.forEach((s) => { const g = gradeOne(q, key[k], s.answers?.[k], s.grades?.[k]); if (!g.pending) { any += g.max; full += g.got; } const a = s.answers?.[k]; if (['mcq', 'emoji', 'quote', 'tf'].includes(t)) dist[String(a)] = (dist[String(a)] || 0) + 1; });
+      const det = ['mcq', 'emoji', 'quote'].includes(t) ? q.options.map((o, j) => `${j === key[k] ? '✓ ' : ''}${esc(o)}: ${ar(dist[String(j)] || 0)}`).join('<br>') : t === 'tf' ? `صح: ${ar(dist.true || 0)}، خطأ: ${ar(dist.false || 0)}` : t === 'fill' ? `الإجابة: ${esc(key[k])}` : t !== 'essay' ? `الصح: ${esc(keyLabel(q, key[k]))}` : `بيتصحح بالإيد${subs.some((x) => gradeOne(q, key[k], x.answers?.[k], x.grades?.[k]).pending) ? '، فيه لسه مستني' : ''}`;
       return [ar(k + 1), esc(q.q), QTYPES[t], `${ar(pc(full, any))}٪ ${bar(pc(full, any), pc(full, any) >= 60 ? '#1E9C8F' : '#E4202B')}`, `<small>${det}</small>`]; }), widths: [5, 35, 11, 19, 30] } });
   const missing = S.users.filter((u) => !subs.some((s) => s.userId === u.id));
   if (missing.length) B.push({ table: { title: `مادخلوش الامتحان (${ar(missing.length)})`, head: ['الاسم', 'الموبايل'], rows: missing.map((u) => [esc(u.name), `<span dir="ltr">${esc(phoneOf(u))}</span>`]), widths: [60, 40] } });

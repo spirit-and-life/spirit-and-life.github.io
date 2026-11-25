@@ -51,7 +51,7 @@ function vSea() {
   const mLeft = mp.x > W / 2;
   s += `<g class="ship-bob" style="transform-origin:${mp.x}px ${mp.y}px"><svg x="${mp.x - 46}" y="${mp.y - 64}" width="92" height="92" viewBox="0 0 930 920" style="${NIGHT}overflow:visible"><use href="#ship"/></svg></g>`;
   s += `<g><rect x="${mp.x + (mLeft ? -126 : 40)}" y="${mp.y + 24}" width="86" height="22" rx="11" fill="#FFC857"/><text x="${mp.x + (mLeft ? -83 : 83)}" y="${mp.y + 39}" text-anchor="middle" font-size="12" font-weight="700" fill="#14264F" style="stroke:none">${maxRead ? 'أنت هنا' : 'ابدأ الرحلة'}</text></g>`;
-  APP.innerHTML = `<div class="view">${topbar()}<div class="hello"><h1>رحلتنا في بحر التكوين</h1><p>كل يوم محطة… وآخر ميناء «الميلاد» يوم ${fmtDate(END, false)}</p></div>${segs('sea')}
+  APP.innerHTML = `<div class="view">${topbar()}<div class="hello"><h1>رحلتنا في بحر التكوين</h1><p>كل يوم محطة… وآخر ميناء «الوصول» يوم ${fmtDate(END, false)}</p></div>${segs('sea')}
   <div class="seamap" id="sea"><svg viewBox="0 0 ${W} ${H}" id="seasvg" role="img" aria-label="خريطة الرحلة البحرية">${s}</svg></div>
   <div class="legend"><span><i class="lit"></i>قريته</span><span><i class="ring"></i>لسه</span><span><i class="now"></i>النهارده</span><span><i class="well"></i>بئر</span></div>
   <section class="card"><h2>الشارات</h2><div class="badges">${BADGES.map((b) => `<div class="badge ${b.test(r) ? 'got' : ''}"><i>${ICO(b.icon)}</i><b>${b.name}</b><small>${b.desc}</small></div>`).join('')}</div></section>${foot()}</div>`;

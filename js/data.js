@@ -44,16 +44,83 @@ export function examState(e, now = Date.now()) {
   if (e.closeAt && now > e.closeAt) return 'closed';
   return 'open';
 }
-// ---- الامتحانات: ٤ أنواع أسئلة (اختياري / صح وخطأ / أكمل / مقالي)
-export const QTYPES = { mcq: 'اختياري', tf: 'صح وخطأ', fill: 'أكمل', essay: 'مقالي' };
+// ---- أنواع الأسئلة (للامتحانات وللأسئلة تحت كل أصحاح): ٤ أساسية + ٨ إبداعية
+export const QTYPES = { mcq: 'اختياري', tf: 'صح وخطأ', fill: 'أكمل', essay: 'مقالي',
+  order: 'رتّب الأحداث', match: 'وصّل', multi: 'أكتر من إجابة', words: 'رتّب الآية', riddle: 'مين أنا؟', num: 'قدّر الرقم', emoji: 'خمّن بالإيموجي', quote: 'مين القائل؟' };
+export const QICON = { mcq: '🔘', tf: '⚖️', fill: '✏️', essay: '📝', order: '🔢', match: '🔗', multi: '☑️', words: '🧩', riddle: '🕵️', num: '🔟', emoji: '😀', quote: '🗣️' };
+export const BASIC_TYPES = ['mcq', 'tf', 'fill', 'essay'];
+export const CREATIVE_TYPES = ['order', 'match', 'multi', 'words', 'riddle', 'num', 'emoji', 'quote'];
 // توحيد الكتابة العربية لمقارنة إجابات «أكمل»: من غير تشكيل ولا تطويل، أ إ آ = ا، ى = ي، ة = ه، ومن غير «ال» في أول الكلمة
 export function normAr(t) {
-  return String(t ?? '').replace(/[\u064B-\u0652\u0670\u0640]/g, '').replace(/[أإآٱ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه').replace(/ؤ/g, 'و').replace(/ئ/g, 'ي')
+  return String(t ?? '').replace(/[ً-ْٰـ]/g, '').replace(/[أإآٱ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه').replace(/ؤ/g, 'و').replace(/ئ/g, 'ي')
     .replace(/[٠-٩]/g, (c) => '٠١٢٣٤٥٦٧٨٩'.indexOf(c)).replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/^(ال)(?=\S{3,})/g, '').replace(/\s+/g, ' ').trim();
 }
 const accepted = (k) => String(k ?? '').split(/[\/،,|]| او /).map(normAr).filter(Boolean).map((x) => x.replace(/^ال(?=\S{3,})/, ''));
 export const qPts = (q) => Math.max(1, +(q && q.pts) || 1);
 export const qType = (q) => (q && q.type) || 'mcq';
+export const csv = (s) => (Array.isArray(s) ? s : String(s ?? '').split(',')).filter((x) => x !== '' && x != null).map(Number);
+export const toNum = (v) => { const t = String(v ?? '').trim(); if (t === '') return NaN; return Number(t.replace(/[٠-٩]/g, (c) => '٠١٢٣٤٥٦٧٨٩'.indexOf(c)).replace(/[٫،]/g, '.').replace(/[^\d.\-]/g, '')); };
+
+// ---- خلط ثابت (نفس السؤال دايمًا يتخلط بنفس الشكل)، عشان إجابات الامتحان تفضل مظبوطة لو اتعدّل
+const hashStr = (str) => { let h = 2166136261; for (const c of String(str)) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; };
+export function shuf(n, seed) {
+  const idx = [...Array(n).keys()]; let x = hashStr(seed) || 1; const r = () => { x ^= x << 13; x >>>= 0; x ^= x >>> 17; x ^= x << 5; x >>>= 0; return x / 4294967296; };
+  for (let i = n - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [idx[i], idx[j]] = [idx[j], idx[i]]; }
+  if (n > 1 && idx.every((v, i) => v === i)) idx.push(idx.shift());
+  return idx;
+}
+// صيغة السؤال «الكاملة» (اللي بيكتبها المسؤول وبتتخزن في بنك الأسئلة) ← { pub: اللي بيتشاف، key: الإجابة الصح }
+export function splitQ(q) {
+  const t = qType(q); const base = { type: t, q: q.q, ...(q.pts ? { pts: q.pts } : {}) };
+  if (t === 'mcq' || t === 'emoji' || t === 'quote') return { pub: { ...base, options: q.options, ...(t === 'emoji' ? { emo: q.emo || '' } : {}) }, key: q.answer };
+  if (t === 'riddle') return { pub: { ...base, hints: q.hints, options: q.options }, key: q.answer };
+  if (t === 'multi') return { pub: { ...base, options: q.options }, key: [...q.answers].sort((x, y) => x - y).join(',') };
+  if (t === 'tf') return { pub: base, key: q.tf !== false };
+  if (t === 'fill') return { pub: base, key: q.fill };
+  if (t === 'essay') return { pub: base, key: { model: q.model || '' } };
+  if (t === 'num') return { pub: { ...base, unit: q.unit || '' }, key: { v: +q.v, tol: +q.tol || 0 } };
+  if (t === 'order') { const n = q.items.length; const p = shuf(n, q.q + q.items.join('|')); return { pub: { ...base, items: p.map((i) => q.items[i]) }, key: q.items.map((_, k) => p.indexOf(k)).join(',') }; }
+  if (t === 'match') { const n = q.pairs.length; const p = shuf(n, q.q + q.pairs.map((x) => x.r).join('|')); return { pub: { ...base, left: q.pairs.map((x) => x.l), right: p.map((j) => q.pairs[j].r) }, key: q.pairs.map((_, k) => p.indexOf(k)).join(',') }; }
+  if (t === 'words') { const w = String(q.verse).trim().split(/\s+/); const p = shuf(w.length, q.q + q.verse); return { pub: { ...base, words: p.map((i) => w[i]) }, key: w.join(' ') }; }
+  return { pub: base, key: null };
+}
+// العكس: من اللي بيتشاف + الإجابة الصح ← صيغة المسؤول (لما نفتح امتحان للتعديل)
+const pad = (a, n) => { const o = [...(a || [])]; while (o.length < n) o.push(''); return o; };
+export function joinQ(pub, k) {
+  const t = qType(pub); const b = { type: t, q: pub.q, pts: qPts(pub) }; const nOpt = Math.max(4, (pub.options || []).length);
+  if (t === 'mcq' || t === 'emoji' || t === 'quote') return { ...b, options: pad(pub.options, nOpt), answer: typeof k === 'number' ? k : 0, ...(t === 'emoji' ? { emo: pub.emo || '' } : {}) };
+  if (t === 'riddle') return { ...b, hints: pad(pub.hints, 3), options: pad(pub.options, nOpt), answer: typeof k === 'number' ? k : 0 };
+  if (t === 'multi') return { ...b, options: pad(pub.options, nOpt), answers: csv(k) };
+  if (t === 'tf') return { ...b, tf: k !== false };
+  if (t === 'fill') return { ...b, fill: typeof k === 'string' ? k : '' };
+  if (t === 'essay') return { ...b, model: (k && k.model) || '' };
+  if (t === 'num') return { ...b, v: k && k.v != null ? k.v : '', tol: k && k.tol ? k.tol : 0, unit: pub.unit || '' };
+  if (t === 'order') return { ...b, items: csv(k).map((j) => pub.items[j]) };
+  if (t === 'match') { const m = csv(k); return { ...b, pairs: (pub.left || []).map((l, i) => ({ l, r: (pub.right || [])[m[i]] ?? '' })) }; }
+  if (t === 'words') return { ...b, verse: typeof k === 'string' ? k : (pub.words || []).join(' ') };
+  return b;
+}
+// الإجابة مكتملة؟ (عشان زرار «التالي» و«تأكد»)
+export function isDone(q, a) {
+  const t = qType(q); if (a == null) return false;
+  if (t === 'order') return csv(a).length === (q.items || []).length;
+  if (t === 'match') { const v = String(a).split(','); return v.length === (q.left || []).length && v.every((x) => x !== '' && +x >= 0); }
+  if (t === 'multi') return csv(a).length > 0;
+  if (t === 'words') return String(a).trim().split(/\s+/).filter(Boolean).length === (q.words || []).length;
+  if (t === 'riddle') return typeof a === 'object' && a.a != null && a.a >= 0;
+  if (t === 'num') return Number.isFinite(toNum(a));
+  return typeof a !== 'string' || a.trim().length > 0;
+}
+// درجة جزئية (٠ لـ ١) للأنواع الإبداعية والاختيارية
+function autoFrac(t, k, a) {
+  if (t === 'order') { const K = csv(k), A = csv(a); return K.length ? K.filter((v, i) => A[i] === v).length / K.length : 0; }
+  if (t === 'match') { const K = csv(k), A = String(a).split(',').map(Number); return K.length ? K.filter((v, i) => A[i] === v).length / K.length : 0; }
+  if (t === 'multi') { const K = csv(k), A = csv(a); const good = A.filter((x) => K.includes(x)).length; return K.length ? Math.max(0, (good - (A.length - good)) / K.length) : 0; }
+  if (t === 'words') { const K = normAr(k).split(' ').filter(Boolean), A = normAr(a).split(' ').filter(Boolean); return K.length ? K.filter((w, i) => A[i] === w).length / K.length : 0; }
+  if (t === 'riddle') return a && a.a === k ? [1, 2 / 3, 1 / 3][Math.min(2, Math.max(0, (+a.h || 1) - 1))] : 0;
+  if (t === 'num') { const v = toNum(a); if (!Number.isFinite(v) || !k) return 0; const d = Math.abs(v - k.v); return d === 0 ? 1 : (k.tol && d <= k.tol ? 0.5 : 0); }
+  return a === k ? 1 : 0;
+}
 // سؤال واحد ← { got, max, auto, pending } (pending = مقالي لسه متصححش)
 export function gradeOne(q, k, a, g) {
   const max = qPts(q); const t = qType(q);
@@ -61,7 +128,31 @@ export function gradeOne(q, k, a, g) {
   if (a == null || a === '') return { got: 0, max, auto: true, pending: false };
   if (t === 'essay') return { got: 0, max, auto: false, pending: true };
   if (t === 'fill') { const x = normAr(a).replace(/^ال(?=\S{3,})/, ''); return { got: accepted(k).includes(x) ? max : 0, max, auto: true, pending: false }; }
-  return { got: a === k ? max : 0, max, auto: true, pending: false };
+  const f = autoFrac(t, k, a); return { got: Math.round(f * max * 2) / 2, max, auto: true, pending: false, frac: f };
+}
+// نص الإجابة (بتاعة المشترك / الصح) للعرض في التصحيح والتقارير
+const riddleWord = (h) => (h > 2 ? 'تلميحات' : h === 2 ? 'تلميحين' : 'تلميح');
+export function ansLabel(q, a) {
+  const t = qType(q); if (a == null || a === '') return 'ماجاوبش';
+  if (t === 'mcq' || t === 'emoji' || t === 'quote') return (q.options || [])[a] ?? '—';
+  if (t === 'tf') return a ? 'صح' : 'خطأ';
+  if (t === 'order') return csv(a).map((j, i) => `${i + 1}) ${(q.items || [])[j] ?? '؟'}`).join('  ');
+  if (t === 'match') return String(a).split(',').map((r, i) => `${(q.left || [])[i] ?? ''} ← ${+r >= 0 ? (q.right || [])[+r] : '؟'}`).join('  ·  ');
+  if (t === 'multi') return csv(a).map((j) => (q.options || [])[j]).join('، ');
+  if (t === 'riddle') return `${(q.options || [])[a.a] ?? '—'} (بعد ${a.h || 1} ${riddleWord(a.h || 1)})`;
+  if (t === 'num') return String(a) + (q.unit ? ' ' + q.unit : '');
+  return String(a);
+}
+export function keyLabel(q, k) {
+  const t = qType(q);
+  if (t === 'mcq' || t === 'emoji' || t === 'quote' || t === 'riddle') return (q.options || [])[k] ?? '';
+  if (t === 'tf') return k ? 'صح' : 'خطأ';
+  if (t === 'order') return csv(k).map((j, i) => `${i + 1}) ${(q.items || [])[j] ?? '؟'}`).join('  ');
+  if (t === 'match') return csv(k).map((r, i) => `${(q.left || [])[i] ?? ''} ← ${(q.right || [])[r] ?? ''}`).join('  ·  ');
+  if (t === 'multi') return csv(k).map((j) => (q.options || [])[j]).join('، ');
+  if (t === 'num') return k ? `${k.v}${q.unit ? ' ' + q.unit : ''}${k.tol ? ` (±${k.tol} بنص درجة)` : ''}` : '';
+  if (t === 'essay') return (k && k.model) || '';
+  return String(k ?? '');
 }
 export function scoreSub(exam, key, sub) {
   const Q = exam.questions || []; let score = 0, total = 0, pending = 0;
@@ -87,6 +178,14 @@ let impl = null;
 export let mode = 'demo';
 
 // ------------------------------------------------------------------ DEMO (على الجهاز بس)
+// أسئلة إبداعية للوضع التجريبي
+const demoCreative = [
+  { type: 'order', q: 'رتّب أحداث الطوفان', items: ['نوح وأسرته يدخلوا الفلك', 'تنفجر ينابيع الغمر', 'الرب يغلق الباب على نوح', 'المياه تغطي الجبال'] },
+  { type: 'match', q: 'وصّل كل واحد بشغله', pairs: [{ l: 'قايين', r: 'عامل في الأرض' }, { l: 'هابيل', r: 'راعي غنم' }, { l: 'شيث', r: 'اتولد عوض هابيل' }] },
+  { type: 'multi', q: 'إيه اللي قاله ربنا لنوح عن الفلك؟ (اختار كل الصح)', options: ['من خشب جفر', 'يتطلي بالقار', 'بابه في جانبه', 'من الحجر'], answers: [0, 1, 2] },
+  { type: 'quote', q: 'أَحَارِسٌ أَنَا لِأَخِي؟', options: ['قايين', 'هابيل', 'آدم', 'لامك'], answer: 0 },
+  { type: 'num', q: 'كام سنة عاش آدم؟', v: 930, tol: 10, unit: 'سنة' },
+];
 function demoImpl() {
   const K = 'demo1_';
   const memo = { users: store.get(K + 'users', null), wall: store.get(K + 'wall', null), days: store.get(K + 'days', {}), chq: store.get(K + 'chq', {}), exams: store.get(K + 'exams', []), keys: store.get(K + 'keys', {}), subs: store.get(K + 'subs', []), qs: store.get(K + 'qs', null) };
@@ -114,13 +213,21 @@ function demoImpl() {
       { q: 'إيه أول حاجة قال الله «ليكن»؟', options: ['الجَلَد', 'النور', 'الأرض', 'الإنسان'], answer: 1, explain: '«وَقَالَ اللهُ: لِيَكُنْ نُورٌ، فَكَانَ نُورٌ» (تك ١: ٣)' },
       { q: 'في أنهي يوم خلق الله الإنسان؟', options: ['الرابع', 'الخامس', 'السادس', 'السابع'], answer: 2, explain: 'اليوم السادس (تك ١: ٢٧–٣١)' },
       { q: 'خلق الله الإنسان على…', options: ['صورته', 'صورة الملائكة', 'صورة الحيوان', 'مفيش إجابة صح'], answer: 0, explain: '«فَخَلَقَ اللهُ الإِنْسَانَ عَلَى صُورَتِهِ» (تك ١: ٢٧)' },
+      { type: 'order', q: 'رتّب أيام الخلق من الأول للسادس', items: ['النور', 'الجَلَد (السماء)', 'اليابسة والنباتات', 'الشمس والقمر والنجوم', 'الأسماك والطيور', 'الحيوانات والإنسان'], explain: 'تكوين ١: ٣–٣١' },
+      { type: 'match', q: 'وصّل كل يوم بالحاجة اللي اتخلقت فيه', pairs: [{ l: 'اليوم الأول', r: 'النور' }, { l: 'اليوم الرابع', r: 'الشمس والقمر' }, { l: 'اليوم الخامس', r: 'الطيور والأسماك' }, { l: 'اليوم السادس', r: 'الإنسان' }], explain: 'تكوين ١' },
+      { type: 'emoji', q: 'الإيموجي دي بتفكرك بأنهي يوم من أيام الخلق؟', emo: '☀️🌙⭐', options: ['اليوم الأول', 'اليوم الثاني', 'اليوم الرابع', 'اليوم السادس'], answer: 2, explain: '«فَعَمِلَ اللهُ النُّورَيْنِ الْعَظِيمَيْنِ… وَالنُّجُومَ» (تك ١: ١٦)' },
+      { type: 'multi', q: 'اختار كل اللي اتخلق في اليوم الثالث', options: ['اليابسة والبحار', 'العشب والأشجار المثمرة', 'الشمس والقمر', 'الطيور', 'الإنسان'], answers: [0, 1], explain: 'تكوين ١: ٩–١٣' },
+      { type: 'words', q: 'رتّب كلمات أول آية في الكتاب المقدس', verse: 'فِي الْبَدْءِ خَلَقَ اللهُ السَّمَاوَاتِ وَالْأَرْضَ.', explain: 'تكوين ١: ١' },
+      { type: 'riddle', q: 'مين أنا؟', hints: ['أنا أول امرأة في الكتاب', 'اتبنيت من ضلع', 'آدم سمّاني اسم معناه «أم كل حي»'], options: ['حواء', 'سارة', 'رفقة', 'راحيل'], answer: 0, explain: 'تكوين ٣: ٢٠' },
+      { type: 'num', q: 'كام يوم اشتغل الله في الخلق قبل ما يستريح؟', v: 6, tol: 0, unit: 'أيام', explain: 'تكوين ٢: ٢' },
     ] } };
     memo.exams = [{ id: 'ex1', title: 'امتحان الأسبوع الأول', desc: 'تكوين ١ – ٧', status: 'open', openAt: null, closeAt: Date.now() + 864e5 * 5, questions: [
       { q: 'مين قتل هابيل؟', options: ['قايين', 'شيث', 'آدم', 'نوح'] },
       { q: 'كام يوم استمر المطر في الطوفان؟', options: ['٧ أيام', '٤٠ يومًا', '١٠٠ يوم', 'سنة'] },
       { q: 'الإنسان اتخلق من…', options: ['نار', 'تراب الأرض', 'ميّة', 'هوا'] },
+      ...demoCreative.map((x) => splitQ({ ...x, pts: x.type === 'riddle' || x.type === 'order' ? 3 : 2 }).pub),
     ], results: [], createdAt: Date.now() - 864e5 }];
-    memo.keys = { ex1: [0, 1, 1] };
+    memo.keys = { ex1: [0, 1, 1, ...demoCreative.map((x) => splitQ(x).key)] };
     save();
   }
   if (!memo.qs) {

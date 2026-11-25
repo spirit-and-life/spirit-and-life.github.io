@@ -1,6 +1,7 @@
 // لوحة المسؤولين — لينك خاص #/admin وكود
 import { DAYS, TOTAL, ar, fmtDate, todayCairo, dueDays, chLabel, dayTitle, CH_TITLES, status, weekOf } from './plan.js';
-import { api, mode, normPhone, buildResults, examState, scoreSub, gradeOne, QTYPES, qPts, qType } from './data.js';
+import { api, mode, normPhone, buildResults, examState, scoreSub, gradeOne, QTYPES, QICON, BASIC_TYPES, CREATIVE_TYPES, qPts, qType, splitQ, joinQ, toNum, ansLabel, keyLabel } from './data.js';
+import { pickVerse } from './extras.js';
 import { reportsTab } from './reports.js';
 import { $, $$, esc, APP, S, first, avatar, toast, topbar, burst, ICON, timeAgo } from './ui.js';
 import { userStats, readState, cairoDate, weeksSummary } from './stats.js';
@@ -126,42 +127,132 @@ function personModal(u) {
   m.querySelector('#rm').onclick = async (ev) => { const b = ev.currentTarget; if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = 'متأكد؟ اضغط تاني'; setTimeout(() => { delete b.dataset.sure; b.textContent = 'حذف المشترك'; }, 3000); return; } await api.adminDeleteUser(u.id); toast('اتحذف المشترك'); m.remove(); };
 }
 
-// ---------------------------------------------------------------- منشئ الأسئلة (للبنك وللامتحانات)
-function qBuilder(host, questions, withKey = true) {
+// ---------------------------------------------------------------- منشئ الأسئلة (للبنك وللامتحانات): ٤ أنواع أساسية + ٨ إبداعية
+const LET = 'أبجدهو';
+const TYPE_HINT = {
+  mcq: 'علّم الدايرة جنب الإجابة الصح', tf: 'اختار الإجابة الصح', fill: 'حط «……» مكان الكلمة الناقصة في السؤال', essay: 'المشترك بيكتب إجابته، وإنت بتصححها بإيدك',
+  order: 'اكتب الأحداث بالترتيب الصح (٣ لـ ٦)، وإحنا بنخلطها للمشترك. بياخد جزء من الدرجة على كل مكان مظبوط.',
+  match: 'اكتب كل عنصر مع اللي يناسبه (٢ لـ ٦)، وإحنا بنخلط الجهة التانية. الدرجة بتتوزع على التوصيلات الصح.',
+  multi: 'علّم المربعات جنب كل الإجابات الصح (واحدة أو أكتر). الاختيار الغلط بيخصم من الصح.',
+  words: 'اكتب الآية كاملة، وهنفصلها كلمات ونخلطها، والمشترك يرتبها من جديد.',
+  riddle: 'اكتب تلميحين أو تلاتة من الأصعب للأسهل. الدرجة كاملة لو عرف بأول تلميح، وبتقل مع كل تلميح.',
+  num: 'اكتب الرقم الصح. لو حطيت «هامش» (مثلًا ١٠)، اللي يقرّب في حدوده ياخد نص الدرجة.',
+  emoji: 'حط إيموجي بيلمّح للقصة أو الشخصية، والمشترك يختار الإجابة الصح.',
+  quote: 'اكتب الجملة اللي اتقالت في «السؤال»، وحط أسماء في الاختيارات وعلّم الصح.',
+};
+const blankQ = (type = 'mcq') => ({ type, q: '', pts: type === 'essay' ? 3 : 1, options: ['', '', '', ''], answer: 0, answers: [], tf: true, fill: '', model: '', items: ['', '', ''], pairs: [{ l: '', r: '' }, { l: '', r: '' }], verse: '', hints: ['', '', ''], v: '', tol: 0, unit: '', emo: '', explain: '' });
+const padTo = (a, n) => { const o = [...(a || [])]; while (o.length < n) o.push(''); return o; };
+function toEd(q) {
+  const t = qType(q); const m = { ...blankQ(t), ...q, type: t };
+  m.options = padTo(m.options, 4); m.hints = padTo(m.hints, 3); m.items = padTo(m.items, 3); m.answers = m.answers || [];
+  if (!m.pairs || m.pairs.length < 2) m.pairs = [...(m.pairs || []), { l: '', r: '' }, { l: '', r: '' }].slice(0, 2);
+  return m;
+}
+const fromPub = (pub, k) => toEd(joinQ(pub, k));
+const isBlank = (q) => !q.q && !q.options.some(Boolean) && !q.items.some(Boolean) && !q.pairs.some((p) => p.l || p.r) && !q.verse && !q.fill && !q.model && !q.hints.some(Boolean) && q.v === '' && !q.emo;
+
+// host: عنصر الصفحة | qs: مصفوفة الأسئلة (بتتعدل مكانها) | inline: true = البنك (الإجابة جوه السؤال)، false = الامتحان (سؤال + مفتاح منفصل)
+function questionBuilder(host, qs, { inline = false } = {}) {
+  const typeBtn = (q, k) => `<button type="button" class="${q.type === k ? 'on' : ''}" data-ty="${k}">${QICON[k]} ${QTYPES[k]}</button>`;
+  const types = (list) => list.filter((k) => !inline || k !== 'essay');
+  const optRows = (q, i, multi) => q.options.map((o, k) => `<label class="optin">${multi ? `<input type="checkbox" data-ck="${k}" ${q.answers.includes(k) ? 'checked' : ''} aria-label="إجابة صح">` : `<input type="radio" name="a${i}" value="${k}" ${q.answer === k ? 'checked' : ''} aria-label="الإجابة الصح">`}<input class="inp" data-o="${k}" value="${esc(o)}" placeholder="اختيار ${LET[k] || ar(k + 1)}${k > 1 ? ' (اختياري)' : ''}"></label>`).join('')
+    + (q.options.length < 6 ? '<button type="button" class="chip tiny" data-addopt>＋ اختيار</button>' : '');
+  const fields = (q, i) => {
+    const t = q.type;
+    if (t === 'mcq' || t === 'quote') return optRows(q, i, false);
+    if (t === 'emoji') return `<input class="inp" data-f="emo" value="${esc(q.emo)}" placeholder="الإيموجي، مثلًا 🐍🍎🌳" style="margin-top:6px">${optRows(q, i, false)}`;
+    if (t === 'multi') return optRows(q, i, true);
+    if (t === 'riddle') return [0, 1, 2].map((k) => `<div class="nrow"><i>${ar(k + 1)}</i><input class="inp" data-h="${k}" value="${esc(q.hints[k] || '')}" placeholder="تلميح ${ar(k + 1)}${k === 0 ? ' (الأصعب)' : k === 2 ? ' (الأسهل)' : ''}"></div>`).join('') + `<span class="lab">الاختيارات (علّم الصح)</span>${optRows(q, i, false)}`;
+    if (t === 'tf') return `<div class="tfpick"><label><input type="radio" name="tf${i}" value="1" ${q.tf !== false ? 'checked' : ''}> ✓ صح</label><label><input type="radio" name="tf${i}" value="0" ${q.tf === false ? 'checked' : ''}> ✗ خطأ</label></div>`;
+    if (t === 'fill') return `<input class="inp" data-f="fill" value="${esc(q.fill || '')}" placeholder="الإجابة الصح. لو فيه أكتر من إجابة مقبولة افصل بينهم بـ /">`;
+    if (t === 'essay') return `<textarea class="inp" data-f="model" rows="2" placeholder="إجابة نموذجية (اختياري، بتظهرلك إنت بس وقت التصحيح)">${esc(q.model || '')}</textarea>`;
+    if (t === 'order') return `<span class="lab">الأحداث بالترتيب الصح</span>${q.items.map((x, k) => `<div class="nrow"><i>${ar(k + 1)}</i><input class="inp" data-it="${k}" value="${esc(x)}" placeholder="الحدث ${ar(k + 1)}">${q.items.length > 3 ? `<button type="button" class="chip tiny" data-rmit="${k}" aria-label="شيل">✕</button>` : ''}</div>`).join('')}${q.items.length < 6 ? '<button type="button" class="chip tiny" data-addit>＋ حدث</button>' : ''}`;
+    if (t === 'match') return `<span class="lab">كل عنصر مع اللي يناسبه</span>${q.pairs.map((p, k) => `<div class="pairrow"><input class="inp" data-pl="${k}" value="${esc(p.l)}" placeholder="العنصر"><span>↔</span><input class="inp" data-pr="${k}" value="${esc(p.r)}" placeholder="اللي يناسبه">${q.pairs.length > 2 ? `<button type="button" class="chip tiny" data-rmpair="${k}" aria-label="شيل">✕</button>` : ''}</div>`).join('')}${q.pairs.length < 6 ? '<button type="button" class="chip tiny" data-addpair>＋ توصيلة</button>' : ''}`;
+    if (t === 'words') return `<textarea class="inp" data-f="verse" rows="2" placeholder="اكتب الآية كاملة">${esc(q.verse || '')}</textarea><button type="button" class="chip tiny" data-pickv>📖 هات الآية من الكتاب</button>`;
+    if (t === 'num') return `<div class="row2"><input class="inp" data-f="v" inputmode="decimal" value="${esc(q.v)}" placeholder="الرقم الصح"><input class="inp" data-f="tol" inputmode="decimal" value="${q.tol || ''}" placeholder="هامش (اختياري)"></div><input class="inp" data-f="unit" value="${esc(q.unit || '')}" placeholder="الوحدة، مثلًا: سنة (اختياري)" style="margin-top:6px">`;
+    return '';
+  };
+  const ph = (t) => (t === 'fill' ? 'مثلًا: في البدء خلق الله …… والأرض' : t === 'quote' ? 'الجملة اللي اتقالت…' : t === 'emoji' ? 'السؤال، مثلًا: الإيموجي دي بتفكرك بإيه؟' : t === 'order' ? 'السؤال، مثلًا: رتّب أيام الخلق' : t === 'riddle' ? 'السؤال (اختياري)، مثلًا: مين أنا؟' : t === 'num' ? 'السؤال، مثلًا: كام سنة عاش آدم؟' : 'السؤال');
   const draw = () => {
-    host.innerHTML = questions.map((q, i) => `<div class="qed" data-i="${i}"><div class="between"><b>سؤال ${ar(i + 1)}</b><button class="chip" data-del="${i}">حذف</button></div>
-      <input class="inp" data-f="q" value="${esc(q.q)}" placeholder="السؤال">
-      ${[0, 1, 2, 3].map((k) => `<label class="optin"><input type="radio" name="a${i}" value="${k}" ${q.answer === k ? 'checked' : ''} aria-label="الإجابة الصح"><input class="inp" data-o="${k}" value="${esc(q.options[k] || '')}" placeholder="اختيار ${'أبجد'[k]}${k > 1 ? ' (اختياري)' : ''}"></label>`).join('')}
-      ${withKey ? `<input class="inp" data-f="explain" value="${esc(q.explain || '')}" placeholder="الشاهد أو التوضيح (اختياري) — بيظهر بعد الإجابة">` : ''}</div>`).join('')
-      + '<button class="btn ghost block" id="qadd">＋ ضيف سؤال</button><p class="hint">علّم الدايرة جنب الإجابة الصح.</p>';
-    $$('[data-del]', host).forEach((b) => b.onclick = () => { read(); questions.splice(+b.dataset.del, 1); draw(); });
-    $('#qadd', host).onclick = () => { read(); questions.push({ q: '', options: ['', '', '', ''], answer: 0, explain: '' }); draw(); $$('.qed', host).slice(-1)[0]?.querySelector('input')?.focus(); };
+    host.innerHTML = qs.map((q, i) => `<div class="qed" data-i="${i}"><div class="between"><b>سؤال ${ar(i + 1)}</b><span class="row" style="gap:6px">${inline ? '' : `<label class="pts">الدرجة <input type="number" min="1" max="20" data-f="pts" value="${q.pts || 1}"></label>`}<button class="chip" data-del="${i}">حذف</button></span></div>
+      <div class="qtypes grp"><span class="sec">أساسية</span>${types(BASIC_TYPES).map((k) => typeBtn(q, k)).join('')}<span class="sec">إبداعية ✨</span>${CREATIVE_TYPES.map((k) => typeBtn(q, k)).join('')}</div>
+      <textarea class="inp" data-f="q" rows="2" placeholder="${ph(q.type)}">${esc(q.q)}</textarea>
+      ${fields(q, i)}
+      ${inline && q.type !== 'essay' ? `<input class="inp" data-f="explain" value="${esc(q.explain || '')}" placeholder="الشاهد أو التوضيح (اختياري) — بيظهر بعد الإجابة" style="margin-top:6px">` : ''}
+      <p class="hint">${TYPE_HINT[q.type]}</p></div>`).join('')
+      + `<p class="sub" style="margin:12px 2px 4px">＋ ضيف سؤال:</p><div class="qaddgrp">${types([...BASIC_TYPES, ...CREATIVE_TYPES]).map((k) => `<button type="button" class="btn ghost" data-add="${k}">${QICON[k]} ${QTYPES[k]}</button>`).join('')}</div>`;
+    const idx = (el) => +el.closest('.qed').dataset.i;
+    $$('[data-del]', host).forEach((b) => b.onclick = () => { read(); qs.splice(+b.dataset.del, 1); draw(); });
+    $$('[data-ty]', host).forEach((b) => b.onclick = () => { read(); const q = qs[idx(b)]; q.type = b.dataset.ty; if (q.type === 'essay' && (q.pts || 1) < 3) q.pts = 3; draw(); });
+    $$('[data-add]', host).forEach((b) => b.onclick = () => { read(); qs.push(blankQ(b.dataset.add)); draw(); $$('.qed', host).slice(-1)[0]?.querySelector('textarea')?.focus(); });
+    $$('[data-addopt]', host).forEach((b) => b.onclick = () => { read(); qs[idx(b)].options.push(''); draw(); });
+    $$('[data-addit]', host).forEach((b) => b.onclick = () => { read(); qs[idx(b)].items.push(''); draw(); });
+    $$('[data-rmit]', host).forEach((b) => b.onclick = () => { read(); qs[idx(b)].items.splice(+b.dataset.rmit, 1); draw(); });
+    $$('[data-addpair]', host).forEach((b) => b.onclick = () => { read(); qs[idx(b)].pairs.push({ l: '', r: '' }); draw(); });
+    $$('[data-rmpair]', host).forEach((b) => b.onclick = () => { read(); qs[idx(b)].pairs.splice(+b.dataset.rmpair, 1); draw(); });
+    $$('[data-pickv]', host).forEach((b) => b.onclick = () => { read(); const q = qs[idx(b)]; pickVerse((txt) => { q.verse = txt; draw(); }); });
   };
   const read = () => {
-    $$('.qed', host).forEach((box) => { const i = +box.dataset.i; const q = questions[i];
-      q.q = box.querySelector('[data-f="q"]').value.trim(); q.options = [0, 1, 2, 3].map((k) => box.querySelector(`[data-o="${k}"]`).value.trim());
-      const a = box.querySelector(`input[name="a${i}"]:checked`); q.answer = a ? +a.value : 0; const ex = box.querySelector('[data-f="explain"]'); if (ex) q.explain = ex.value.trim(); });
+    $$('.qed', host).forEach((box) => { const i = +box.dataset.i; const q = qs[i]; const f = (n) => box.querySelector(`[data-f="${n}"]`);
+      q.q = f('q').value.trim(); if (f('pts')) q.pts = Math.max(1, Math.min(20, +f('pts').value || 1)); if (f('explain')) q.explain = f('explain').value.trim();
+      if (box.querySelector('[data-o]')) q.options = $$('[data-o]', box).map((x) => x.value.trim());
+      const a = box.querySelector(`input[name="a${i}"]:checked`); if (a) q.answer = +a.value;
+      if (box.querySelector('[data-ck]')) q.answers = $$('[data-ck]', box).filter((x) => x.checked).map((x) => +x.dataset.ck);
+      const tf = box.querySelector(`input[name="tf${i}"]:checked`); if (tf) q.tf = tf.value === '1';
+      if (f('fill')) q.fill = f('fill').value.trim(); if (f('model')) q.model = f('model').value.trim(); if (f('emo')) q.emo = f('emo').value.trim();
+      if (box.querySelector('[data-it]')) q.items = $$('[data-it]', box).map((x) => x.value.trim());
+      if (box.querySelector('[data-pl]')) q.pairs = $$('[data-pl]', box).map((x, k) => ({ l: x.value.trim(), r: box.querySelector(`[data-pr="${k}"]`).value.trim() }));
+      if (f('verse')) q.verse = f('verse').value.trim();
+      if (box.querySelector('[data-h]')) q.hints = $$('[data-h]', box).map((x) => x.value.trim());
+      if (f('v')) { q.v = f('v').value.trim(); q.tol = f('tol').value.trim(); q.unit = f('unit').value.trim(); }
+    });
   };
   draw();
-  const api2 = () => { read(); const clean = []; for (const q of questions) {
-    const opts = q.options.map((o, k) => ({ o, k })).filter((x) => x.o); if (!q.q && !opts.length) continue;
-    if (!q.q || opts.length < 2) return { error: 'كل سؤال محتاج نص واختيارين على الأقل' };
-    const ans = opts.findIndex((x) => x.k === q.answer); if (ans < 0) return { error: 'في سؤال الإجابة الصح فيه اختيار فاضي' };
-    clean.push({ q: q.q, options: opts.map((x) => x.o), answer: ans, ...(q.explain ? { explain: q.explain } : {}) }); } return { questions: clean }; };
-  api2.add = (qs) => { read(); qs.forEach((q) => questions.push({ q: q.q, options: [...q.options, '', '', '', ''].slice(0, 4), answer: q.answer, explain: '' })); draw(); };
-  return api2;
+  // بيرجّع { questions, key? } أو { error }
+  const getter = () => {
+    read(); const out = [], keys = [];
+    for (const [n, q] of qs.entries()) {
+      if (isBlank(q)) continue; const no = ar(n + 1); const t = q.type;
+      if (!q.q && t !== 'emoji' && t !== 'riddle') return { error: `سؤال ${no} محتاج نص` };
+      const o = { type: t, q: q.q || (t === 'emoji' ? 'الإيموجي دي بتفكرك بإيه؟' : 'مين أنا؟'), ...(inline ? {} : { pts: q.pts || 1 }), ...(inline && q.explain && t !== 'essay' ? { explain: q.explain } : {}) };
+      const opts = (arr) => arr.map((x, k) => ({ x, k })).filter((y) => y.x);
+      if (['mcq', 'quote', 'emoji', 'riddle'].includes(t)) {
+        const os = opts(q.options); if (os.length < 2) return { error: `سؤال ${no} محتاج اختيارين على الأقل` };
+        const ans = os.findIndex((y) => y.k === q.answer); if (ans < 0) return { error: `في سؤال ${no} الإجابة الصح اختيار فاضي` };
+        o.options = os.map((y) => y.x); o.answer = ans;
+        if (t === 'emoji') { if (!q.emo) return { error: `سؤال ${no} محتاج إيموجي` }; o.emo = q.emo; }
+        if (t === 'riddle') { const hs = q.hints.filter(Boolean); if (hs.length < 2) return { error: `سؤال ${no} محتاج تلميحين على الأقل` }; o.hints = hs; }
+      } else if (t === 'multi') {
+        const os = opts(q.options); if (os.length < 2) return { error: `سؤال ${no} محتاج اختيارين على الأقل` };
+        const ans = os.map((y, j) => (q.answers.includes(y.k) ? j : -1)).filter((j) => j >= 0); if (!ans.length) return { error: `علّم إجابة صح واحدة على الأقل في سؤال ${no}` };
+        o.options = os.map((y) => y.x); o.answers = ans;
+      } else if (t === 'tf') o.tf = q.tf !== false;
+      else if (t === 'fill') { if (!q.fill) return { error: `اكتب الإجابة الصح لسؤال ${no}` }; o.fill = q.fill; }
+      else if (t === 'essay') o.model = q.model || '';
+      else if (t === 'order') { const it = q.items.filter(Boolean); if (it.length < 3) return { error: `سؤال ${no} محتاج ٣ أحداث على الأقل` }; o.items = it; }
+      else if (t === 'match') { const ps = q.pairs.filter((p) => p.l && p.r); if (ps.length < 2) return { error: `سؤال ${no} محتاج توصيلتين على الأقل` }; if (new Set(ps.map((p) => p.r)).size < ps.length) return { error: `في سؤال ${no} الجهة التانية فيها عناصر مكررة` }; o.pairs = ps; }
+      else if (t === 'words') { const w = q.verse.split(/\s+/).filter(Boolean); if (w.length < 3) return { error: `الآية في سؤال ${no} قصيرة` }; if (w.length > 20) return { error: `الآية في سؤال ${no} طويلة (أقصى حاجة ٢٠ كلمة)` }; o.verse = w.join(' '); }
+      else if (t === 'num') { const v = toNum(q.v); if (!Number.isFinite(v)) return { error: `اكتب الرقم الصح لسؤال ${no}` }; o.v = v; o.tol = Math.max(0, toNum(q.tol) || 0); if (q.unit) o.unit = q.unit; }
+      if (inline) out.push(o); else { const { pub, key } = splitQ(o); out.push(pub); keys.push(key); }
+    }
+    return inline ? { questions: out } : { questions: out, key: keys };
+  };
+  getter.add = (list) => { read(); list.filter((x) => qType(x) !== 'essay').forEach((x) => qs.push(toEd(x))); draw(); };
+  return getter;
 }
 
 // ---------------------------------------------------------------- بنك الأسئلة (سؤال أو أكتر على كل أصحاح)
 function bank(el, arg) {
   const key = arg || S.qKey || '1'; S.qKey = key; const has = (k) => (S.chq[k]?.questions || []).length;
-  const cur = (S.chq[key]?.questions || []).map((q) => ({ ...q, options: [...q.options, '', '', '', ''].slice(0, 4) }));
-  if (!cur.length) cur.push({ q: '', options: ['', '', '', ''], answer: 0, explain: '' });
-  el.innerHTML = `<section class="card"><h2>بنك الأسئلة</h2><p class="sub">أسئلة على كل أصحاح (اختياري). بتظهر للمشتركين تحت الأصحاح بعنوان «اختبر نفسك»، وتقدر تستورد منها في الامتحانات.</p>
+  const cur = (S.chq[key]?.questions || []).map(toEd);
+  if (!cur.length) cur.push(blankQ('mcq'));
+  el.innerHTML = `<section class="card"><h2>بنك الأسئلة</h2><p class="sub">أسئلة على كل أصحاح (اختياري)، بأي نوع من الـ١٢ نوع (منهم ٨ إبداعية). بتظهر للمشتركين تحت الأصحاح بعنوان «اختبر نفسك» بتصحيح فوري، وتقدر تستورد منها في الامتحانات.</p>
     <select id="ksel" style="margin-top:10px">${CH.map((c) => `<option value="${c.key}" ${c.key === key ? 'selected' : ''}>${c.label}${has(c.key) ? ` ✓ (${ar(has(c.key))})` : ''}</option>`).join('')}</select></section>
-  <section class="card"><div class="between"><div><b>أسئلة جاهزة</b><p class="sub">٣ أسئلة على كل أصحاح من تكوين ١ لـ ٧ (أسبوع الرحلة الأول). مراجعتها قبل الاستخدام أفضل.</p></div><button class="btn ghost" id="seed">استورد</button></div></section>
+  <section class="card"><div class="between"><div><b>أسئلة جاهزة</b><p class="sub">٣ أسئلة على كل أصحاح من تكوين ١ لـ ٧ (أسبوع الرحلة الأول). مراجعتها قبل الاستخدام أفضل.</p></div><button class="btn ghost" id="seed">استورد</button></div>
+    <div class="between" style="margin-top:12px"><div><b>أسئلة إبداعية جاهزة ✨</b><p class="sub">أسئلة ترتيب وتوصيل وألغاز وإيموجي على أصحاحات ١ لـ ٧، بتتضاف على الموجود من غير ما تمسح حاجة.</p></div><button class="btn ghost" id="seedc">استورد</button></div></section>
   <section class="card"><div id="qb"></div><div class="actions"><button class="btn primary" id="qsave">حفظ الأسئلة</button>${has(key) ? '<button class="btn ghost" id="qclear">امسح أسئلة الأصحاح</button>' : ''}</div></section>`;
-  const get = qBuilder($('#qb', el), cur);
+  const get = questionBuilder($('#qb', el), cur, { inline: true });
+  $('#seedc', el).onclick = async () => { const b = $('#seedc', el); b.disabled = true; try { const seed = await (await fetch('data/seed-creative.json')).json(); let n = 0; for (const [k, qs] of Object.entries(seed)) { const have = S.chq[k]?.questions || []; const add = qs.filter((x) => !have.some((h) => h.q === x.q)); if (!add.length) continue; await api.saveChq(k, [...have, ...add]); n += add.length; } toast(n ? `اتضاف ${ar(n)} سؤال إبداعي ✓` : 'الأسئلة دي متضافة بالفعل'); setTimeout(() => bank(el, key), 400); } catch (e) { console.error(e); toast('حصلت مشكلة في الاستيراد'); b.disabled = false; } };
   $('#ksel', el).onchange = (e) => { location.hash = `#/admin/bank/${e.target.value}`; };
   $('#seed', el).onclick = async () => { const b = $('#seed', el); b.disabled = true; try { const seed = await (await fetch('data/seed-questions.json')).json(); let n = 0; for (const [k, qs] of Object.entries(seed)) { if ((S.chq[k]?.questions || []).length) continue; await api.saveChq(k, qs); n++; } toast(n ? `اتضافت أسئلة ${ar(n)} أصحاحات ✓` : 'الأصحاحات دي فيها أسئلة بالفعل'); setTimeout(() => bank(el, key), 400); } catch (e) { console.error(e); toast('حصلت مشكلة في الاستيراد'); b.disabled = false; } };
   $('#qsave', el).onclick = async () => { const r = get(); if (r.error) return toast(r.error); await api.saveChq(key, r.questions); toast(r.questions.length ? `اتحفظ ${ar(r.questions.length)} سؤال ✓` : 'مفيش أسئلة على الأصحاح ده'); };
@@ -233,67 +324,20 @@ async function examsTab(el, arg) {
     setTimeout(() => examsTab(el), 300);
   }));
 }
-const TYPE_HINT = { mcq: 'علّم الدايرة جنب الإجابة الصح', tf: 'اختار الإجابة الصح', fill: 'حط «……» مكان الكلمة الناقصة في السؤال', essay: 'المشترك بيكتب إجابته، وإنت بتصححها بإيدك' };
-const blankQ = (type = 'mcq') => ({ type, q: '', options: ['', '', '', ''], answer: 0, tf: true, fill: '', model: '', pts: type === 'essay' ? 3 : 1 });
-function toEditable(q, k) {
-  const t = qType(q); const b = { ...blankQ(t), q: q.q, pts: qPts(q) };
-  if (t === 'mcq') return { ...b, options: [...(q.options || []), '', '', '', ''].slice(0, 4), answer: typeof k === 'number' ? k : 0 };
-  if (t === 'tf') return { ...b, tf: k !== false };
-  if (t === 'fill') return { ...b, fill: typeof k === 'string' ? k : '' };
-  return { ...b, model: (k && k.model) || '' };
-}
-function examBuilder(host, qs) {
-  const draw = () => {
-    host.innerHTML = qs.map((q, i) => `<div class="qed" data-i="${i}"><div class="between"><b>سؤال ${ar(i + 1)}</b><span class="row" style="gap:6px"><label class="pts">الدرجة <input type="number" min="1" max="20" data-f="pts" value="${q.pts || 1}"></label><button class="chip" data-del="${i}">حذف</button></span></div>
-      <div class="qtypes">${Object.entries(QTYPES).map(([k, l]) => `<button type="button" class="${q.type === k ? 'on' : ''}" data-ty="${k}">${l}</button>`).join('')}</div>
-      <textarea class="inp" data-f="q" rows="2" placeholder="${q.type === 'fill' ? 'مثلًا: في البدء خلق الله …… والأرض' : 'السؤال'}">${esc(q.q)}</textarea>
-      ${q.type === 'mcq' ? [0, 1, 2, 3].map((k) => `<label class="optin"><input type="radio" name="a${i}" value="${k}" ${q.answer === k ? 'checked' : ''} aria-label="الإجابة الصح"><input class="inp" data-o="${k}" value="${esc(q.options[k] || '')}" placeholder="اختيار ${'أبجد'[k]}${k > 1 ? ' (اختياري)' : ''}"></label>`).join('') : ''}
-      ${q.type === 'tf' ? `<div class="tfpick"><label><input type="radio" name="tf${i}" value="1" ${q.tf !== false ? 'checked' : ''}> ✓ صح</label><label><input type="radio" name="tf${i}" value="0" ${q.tf === false ? 'checked' : ''}> ✗ خطأ</label></div>` : ''}
-      ${q.type === 'fill' ? `<input class="inp" data-f="fill" value="${esc(q.fill || '')}" placeholder="الإجابة الصح. لو فيه أكتر من إجابة مقبولة افصل بينهم بـ /">` : ''}
-      ${q.type === 'essay' ? `<textarea class="inp" data-f="model" rows="2" placeholder="إجابة نموذجية (اختياري، بتظهرلك إنت بس وقت التصحيح)">${esc(q.model || '')}</textarea>` : ''}
-      <p class="hint">${TYPE_HINT[q.type]}</p></div>`).join('')
-      + `<div class="qadd">${Object.entries(QTYPES).map(([k, l]) => `<button class="btn ghost" data-add="${k}">＋ ${l}</button>`).join('')}</div>`;
-    $$('[data-del]', host).forEach((b) => b.onclick = () => { read(); qs.splice(+b.dataset.del, 1); draw(); });
-    $$('[data-ty]', host).forEach((b) => b.onclick = () => { read(); qs[+b.closest('.qed').dataset.i].type = b.dataset.ty; draw(); });
-    $$('[data-add]', host).forEach((b) => b.onclick = () => { read(); qs.push(blankQ(b.dataset.add)); draw(); $$('.qed', host).slice(-1)[0]?.querySelector('textarea')?.focus(); });
-  };
-  const read = () => {
-    $$('.qed', host).forEach((box) => { const i = +box.dataset.i; const q = qs[i];
-      q.q = box.querySelector('[data-f="q"]').value.trim(); q.pts = Math.max(1, Math.min(20, +box.querySelector('[data-f="pts"]').value || 1));
-      if (q.type === 'mcq') { q.options = [0, 1, 2, 3].map((k) => box.querySelector(`[data-o="${k}"]`).value.trim()); const a = box.querySelector(`input[name="a${i}"]:checked`); q.answer = a ? +a.value : 0; }
-      if (q.type === 'tf') { const a = box.querySelector(`input[name="tf${i}"]:checked`); q.tf = !a || a.value === '1'; }
-      if (q.type === 'fill') q.fill = box.querySelector('[data-f="fill"]').value.trim();
-      if (q.type === 'essay') q.model = box.querySelector('[data-f="model"]').value.trim(); });
-  };
-  draw();
-  const getter = () => { read(); const pub = [], key = [];
-    for (const [n, q] of qs.entries()) {
-      if (!q.q) { if (q.type !== 'mcq' || !q.options.some(Boolean)) continue; return { error: `سؤال ${ar(n + 1)} محتاج نص` }; }
-      const base = { type: q.type, q: q.q, pts: q.pts || 1 };
-      if (q.type === 'mcq') { const opts = q.options.map((o, k) => ({ o, k })).filter((x) => x.o); if (opts.length < 2) return { error: `سؤال ${ar(n + 1)} محتاج اختيارين على الأقل` };
-        const ans = opts.findIndex((x) => x.k === q.answer); if (ans < 0) return { error: `في سؤال ${ar(n + 1)} الإجابة الصح اختيار فاضي` }; pub.push({ ...base, options: opts.map((x) => x.o) }); key.push(ans); }
-      if (q.type === 'tf') { pub.push(base); key.push(q.tf !== false); }
-      if (q.type === 'fill') { if (!q.fill) return { error: `اكتب الإجابة الصح لسؤال ${ar(n + 1)}` }; pub.push(base); key.push(q.fill); }
-      if (q.type === 'essay') { pub.push(base); key.push({ model: q.model || '' }); }
-    }
-    return { questions: pub, key }; };
-  getter.add = (list) => { read(); list.forEach((q) => qs.push({ ...blankQ('mcq'), q: q.q, options: [...q.options, '', '', '', ''].slice(0, 4), answer: q.answer })); draw(); };
-  return getter;
-}
 async function examEditor(el, id) {
   const e = id ? S.exams.find((x) => x.id === id) : null; const key = id ? await api.examKey(id) : [];
-  const qs = e ? e.questions.map((q, i) => toEditable(q, key[i])) : [blankQ('mcq')];
+  const qs = e ? e.questions.map((q, i) => fromPub(q, key[i])) : [blankQ('mcq')];
   const withQ = CH.filter((c) => (S.chq[c.key]?.questions || []).length);
   el.innerHTML = `<section class="card"><h2>${e ? 'تعديل الامتحان' : 'امتحان جديد'}</h2>
     <input class="inp" id="xt" value="${esc(e?.title || '')}" placeholder="اسم الامتحان، مثلًا: امتحان قصة يوسف" style="margin-top:10px">
     <input class="inp" id="xd" value="${esc(e?.desc || '')}" placeholder="وصف قصير (اختياري)" style="margin-top:8px">
     <div class="two"><label class="sub">يفتح (اختياري)<input class="inp" id="xo" type="datetime-local" value="${toLocal(e?.openAt)}"></label><label class="sub">يقفل (اختياري)<input class="inp" id="xc" type="datetime-local" value="${toLocal(e?.closeAt)}"></label></div>
     <p class="hint">لو سيبت الوقتين فاضيين، الامتحان بيفضل مفتوح من أول ما تفتحه لحد ما تقفله.</p></section>
-  <section class="card"><h2>الأسئلة</h2><p class="sub">٤ أنواع: اختياري، صح وخطأ، أكمل، مقالي. الاختياري والصح والخطأ والأكمل بيتصححوا لوحدهم، والمقالي بتصححه إنت.</p>
+  <section class="card"><h2>الأسئلة</h2><p class="sub">١٢ نوع سؤال: ٤ أساسية (اختياري، صح وخطأ، أكمل، مقالي) و٨ إبداعية (رتّب الأحداث، وصّل، أكتر من إجابة، رتّب الآية، مين أنا؟، قدّر الرقم، خمّن بالإيموجي، مين القائل؟). كلهم بيتصححوا لوحدهم وبدرجة جزئية، ما عدا المقالي بتصححه إنت.</p>
     ${withQ.length ? `<div class="two" style="margin-top:8px"><select id="ximp">${withQ.map((c) => `<option value="${c.key}">${c.label} (${ar(S.chq[c.key].questions.length)})</option>`).join('')}</select><button class="btn ghost" id="ximpb">استورد من البنك</button></div>` : ''}
     <div id="xqb" style="margin-top:8px"></div></section>
   <div class="actions"><button class="btn primary" id="xs">احفظ مسودة</button><button class="btn red" id="xo2">احفظ وافتح الامتحان</button></div><a class="btn ghost block" href="#/admin/exams" style="margin-top:10px">رجوع</a>`;
-  const get = examBuilder($('#xqb', el), qs);
+  const get = questionBuilder($('#xqb', el), qs, { inline: false });
   $('#ximpb', el) && ($('#ximpb', el).onclick = () => { const c = $('#ximp', el).value; get.add(S.chq[c].questions); toast('اتضافت الأسئلة'); });
   const save = async (open) => {
     const title = $('#xt', el).value.trim(); if (!title) return toast('اكتب اسم الامتحان'); const r = get(); if (r.error) return toast(r.error); if (!r.questions.length) return toast('ضيف سؤال واحد على الأقل');
@@ -311,11 +355,11 @@ async function examGrader(el, id) {
   const [key, subs] = await Promise.all([api.examKey(id), api.submissions(id)]);
   const Q = e.questions; const only = S.gOnly !== false;
   subs.sort((a, b) => scoreSub(e, key, b).pending - scoreSub(e, key, a).pending || String(a.name).localeCompare(b.name, 'ar'));
-  const ansText = (q, a) => { const t = qType(q); if (a == null || a === '') return '<i class="muted">ماجاوبش</i>'; if (t === 'mcq') return esc(q.options[a] ?? '—'); if (t === 'tf') return a ? '✓ صح' : '✗ خطأ'; return esc(a); };
-  const keyText = (q, k) => { const t = qType(q); if (t === 'mcq') return esc(q.options[k] ?? ''); if (t === 'tf') return k ? '✓ صح' : '✗ خطأ'; if (t === 'fill') return esc(k); return esc((k && k.model) || ''); };
+  const ansText = (q, a) => (a == null || a === '' ? '<i class="muted">ماجاوبش</i>' : esc(ansLabel(q, a)));
+  const keyText = (q, k) => esc(keyLabel(q, k));
   el.innerHTML = `<section class="card"><div class="between"><h2>✍️ تصحيح: ${esc(e.title)}</h2><a class="chip" href="#/admin/exams">رجوع</a></div>
     <p class="sub">المقالي محتاج درجة منك. والأكمل بيتصحح لوحده، بس لو حد كتب إجابة صح بطريقة تانية تقدر تديله الدرجة.</p>
-    <label class="vp-toggle" style="margin-top:8px"><input type="checkbox" id="gonly" ${only ? 'checked' : ''}> اعرض أسئلة المقالي والأكمل بس</label></section>
+    <label class="vp-toggle" style="margin-top:8px"><input type="checkbox" id="gonly" ${only ? 'checked' : ''}> اعرض أسئلة المقالي والأكمل بس (الباقي بيتصحح لوحده)</label></section>
   ${subs.length ? subs.map((s, si) => { const r = scoreSub(e, key, s); return `<section class="card gsub" data-si="${si}"><div class="between"><b>${esc(s.name)}</b><span class="tag ${r.pending ? 'late' : 'ok'}">${ar(r.score)} / ${ar(r.total)}${r.pending ? `، ${ar(r.pending)} مستني` : ''}</span></div>
     ${Q.map((q, i) => { const t = qType(q); if (only && !['essay', 'fill'].includes(t)) return ''; const g = gradeOne(q, key[i], s.answers?.[i], s.grades?.[i]); const max = qPts(q); const cur = s.grades?.[i];
       return `<div class="gq ${g.pending ? 'pend' : g.got === max ? 'ok' : 'no'}"><p class="gqq"><span class="tag">${QTYPES[t]}</span> ${ar(i + 1)}. ${esc(q.q)}</p>

@@ -8,7 +8,7 @@ service cloud.firestore {
       return d.keys().hasOnly(['name','uids','readDays','readAt','quiz','createdAt','lastSeen'])
         && d.name is string && d.name.size() >= 2 && d.name.size() <= 40
         && d.uids is list && request.auth.uid in d.uids && d.uids.size() <= 40
-        && d.readDays is list && d.readDays.size() <= 47;
+        && d.readDays is list && d.readDays.size() <= 50;
     }
 
     // المشتركين: المعرّف مشفّر (SHA-256) فمفيش رقم موبايل ظاهر هنا
