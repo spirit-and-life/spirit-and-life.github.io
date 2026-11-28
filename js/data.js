@@ -2,7 +2,7 @@
 // الهوية: رقم الموبايل بيتحوّل لمعرّف مشفّر (SHA-256) فمفيش أرقام موبايل ظاهرة في الداتا العامة،
 // والرقم نفسه محفوظ في collection منفصل (contacts) ما يقراش غير المسؤولين.
 import { firebaseConfig } from './firebase-config.js';
-import { DAYS, dueDays, todayCairo } from './plan.js';
+import { DAYS, dueDays, todayCairo, clockVerified } from './plan.js';
 
 const listeners = { users: new Set(), wall: new Set(), days: new Set(), chq: new Set(), exams: new Set(), myq: new Set(), blocked: new Set(), expired: new Set() };
 // أخطاء معروفة بنعرض لها رسالة واضحة بدل «حصلت مشكلة»
@@ -35,7 +35,28 @@ export async function idOf(phone) {
   return [...new Uint8Array(h)].map((x) => x.toString(16).padStart(2, '0')).join('').slice(0, 32);
 }
 const ms = (v) => (v && v.toMillis ? v.toMillis() : (typeof v === 'number' ? v : (v && v.seconds ? v.seconds * 1000 : null)));
-function normUser(u) { const ra = {}; Object.entries(u.readAt || {}).forEach(([k, v]) => { const m = ms(v); if (m) ra[k] = m; }); return { ...u, readAt: ra, readDays: u.readDays || [], quiz: u.quiz || {}, blocked: !!u.blocked }; }
+// قراءة أو إجابة اتسجلت قبل يومها (بالثغرات القديمة: تغيير ساعة الموبايل أو ?date) ما بتتحسبش:
+// وقت التسجيل جاي من سيرفر Firebase فمش ممكن يتزوّر. ولما اليوم ييجي، المشترك يقدر يقراه ويسجّله من جديد.
+const cairoDay = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit' });
+const DAY_DATE = Object.fromEntries(DAYS.map((d) => [d.n, d.date]));
+const DAY_OF_CH = Object.fromEntries(DAYS.flatMap((d) => d.ch.map((c) => [String(c), d.n])));
+const tooEarly = (n, t) => !!(t && DAY_DATE[n] && cairoDay.format(new Date(t)) < DAY_DATE[n]);
+function normUser(u) {
+  const ra = {}; Object.entries(u.readAt || {}).forEach(([k, v]) => { const m = ms(v); if (m) ra[k] = m; });
+  // byTime: بوقت السيرفر (أكيد). byDate: يومه لسه ماجاش بحسب ساعة الجهاز، فبنمسحه بس لو اتأكدنا من ساعة السيرفر
+  const today = todayCairo(); const sure = clockVerified();
+  const byTime = (u.readDays || []).filter((n) => tooEarly(n, ra[n]));
+  const byDate = (u.readDays || []).filter((n) => !byTime.includes(n) && DAY_DATE[n] > today);
+  const early = [...byTime, ...byDate]; early.forEach((n) => delete ra[n]);
+  const qTime = [], qDate = []; const quiz = {};
+  Object.entries(u.quiz || {}).forEach(([k, q]) => { const n = DAY_OF_CH[k]; const at = ms(q && q.at);
+    if (n && (byTime.includes(n) || tooEarly(n, at))) qTime.push(k); else if (n && (byDate.includes(n) || DAY_DATE[n] > today)) qDate.push(k); else quiz[k] = at ? { ...q, at } : q; });
+  const out = { ...u, readAt: ra, readDays: (u.readDays || []).filter((n) => !early.includes(n)), quiz, blocked: !!u.blocked };
+  // اللي اتسجل قبل معاده مش بيظهر في أي مكان، وبيتمسح من البيانات (junk مخفي عن العرض)
+  const days = sure ? early : byTime; const qk = sure ? [...qTime, ...qDate] : qTime;
+  Object.defineProperty(out, 'junk', { value: days.length || qk.length ? { days, quiz: qk } : null, enumerable: false });
+  return out;
+}
 const normExam = (id, x) => ({ id, ...x, createdAt: ms(x.createdAt) || 0, openAt: ms(x.openAt) || null, closeAt: ms(x.closeAt) || null, questions: x.questions || [], results: x.results || [] });
 
 // حالة الامتحان بالوقت: draft | soon | open | closed | published
@@ -245,7 +266,11 @@ function demoImpl() {
   const me = () => memo.users.find((u) => u.id === store.get('me', null));
   const guard = () => { const u = me(); if (!u) throw errOf('expired'); if (u.blocked) throw errOf('blocked', BLOCKED_MSG); return u; };
   const myUid = () => 'demo-' + (store.get('me', '') || '');
-  const all = () => { emit('myq', (memo.qs || []).filter((q) => q.uid === myUid())); emit('users', memo.users.map(normUser)); emit('wall', memo.wall); emit('days', memo.days); emit('chq', memo.chq); emit('exams', memo.exams.map((x) => normExam(x.id, x))); };
+  const all = () => {
+    let dirty = false;
+    memo.users.forEach((u) => { const j = normUser(u).junk; if (!j) return; dirty = true; u.readDays = u.readDays.filter((n) => !j.days.includes(n)); j.days.forEach((n) => delete u.readAt[n]); j.quiz.forEach((k) => delete u.quiz[k]); });
+    if (dirty) save();
+    emit('myq', (memo.qs || []).filter((q) => q.uid === myUid())); emit('users', memo.users.map(normUser)); emit('wall', memo.wall); emit('days', memo.days); emit('chq', memo.chq); emit('exams', memo.exams.map((x) => normExam(x.id, x))); };
   return {
     async init() { setTimeout(all, 0); return me() ? normUser(me()) : null; },
     async login(name, phone) {
@@ -268,7 +293,7 @@ function demoImpl() {
     async unblock(key) { const b = memo.blocked[key]; delete memo.blocked[key]; const u = b && memo.users.find((x) => x.id === b.id || (b.phone && x.phone === b.phone)); if (u) u.blocked = false; save(); all(); return true; },
     async blockedList() { return Object.entries(memo.blocked).map(([key, b]) => ({ key, ...b })).sort((a, b) => b.at - a.at); },
     async setRead(n, on) { const u = guard(); const s = new Set(u.readDays); on ? s.add(n) : s.delete(n); u.readDays = [...s].sort((a, b) => a - b); u.readAt = { ...(u.readAt || {}), [n]: Date.now() }; save(); all(); },
-    async answerChq(key, c, t) { const u = guard(); u.quiz = { ...(u.quiz || {}), [key]: { c, t } }; save(); all(); },
+    async answerChq(key, c, t) { const u = guard(); u.quiz = { ...(u.quiz || {}), [key]: { c, t, at: Date.now() } }; save(); all(); },
     myUid,
     async post(type, text, ref, note) { const u = guard(); const anon = type === 'prayer'; memo.wall.push({ id: 'w' + Date.now(), type, text, ref: ref || '', note: note || '', name: anon ? initialOf(u.name) : u.name, userId: anon ? '' : u.id, uid: myUid(), at: Date.now(), amens: 0 }); save(); all(); },
     async amen(id) { const w = memo.wall.find((x) => x.id === id); if (w) { w.amens = (w.amens || 0) + 1; save(); all(); } },
@@ -323,7 +348,7 @@ async function firebaseImpl() {
   }
   function startSubs() {
     if (subs.length) return;
-    subs.push(F.onSnapshot(F.collection(db, 'users'), (s) => { users = s.docs.map((d) => { const x = d.data(); return normUser({ id: d.id, name: x.name, readDays: x.readDays, readAt: x.readAt, quiz: x.quiz, lastSeen: ms(x.lastSeen), blocked: x.blocked }); }); emit('users', users); if (myId && !s.metadata.fromCache && !s.docs.some((d) => d.id === myId)) emit('expired', true); }, denied));
+    subs.push(F.onSnapshot(F.collection(db, 'users'), (s) => { users = s.docs.map((d) => { const x = d.data(); return normUser({ id: d.id, name: x.name, readDays: x.readDays, readAt: x.readAt, quiz: x.quiz, lastSeen: ms(x.lastSeen), blocked: x.blocked }); }); emit('users', users); if (!s.metadata.hasPendingWrites) cleanJunk(users); if (myId && !s.metadata.fromCache && !s.docs.some((d) => d.id === myId)) emit('expired', true); }, denied));
     subs.push(F.onSnapshot(F.query(F.collection(db, 'wall'), F.orderBy('at', 'desc'), F.limit(150)), (s) => {
       emit('wall', s.docs.map((d) => { const x = d.data(); return { id: d.id, ...x, at: ms(x.at) || Date.now() }; }));
     }));
@@ -333,6 +358,17 @@ async function firebaseImpl() {
     subs.push(F.onSnapshot(F.query(F.collection(db, 'questions'), F.where('uid', '==', uid)), (s) => { emit('myq', s.docs.map((d) => { const x = d.data(); return { id: d.id, ...x, at: ms(x.at) || Date.now(), answeredAt: ms(x.answeredAt) }; })); }, () => emit('myq', [])));
   }
   const me = () => users.find((u) => u.id === myId) || (myId ? normUser({ id: myId, name: store.get('myName', '') }) : null);
+  // مسح القراءات والإجابات اللي اتسجلت قبل يومها من البيانات نفسها:
+  // كل مشترك بيتمسح له بتاعه أول ما يفتح الموقع، والمسؤول لما يفتح الموقع بيمسح للكل
+  let servant = false; const tried = new Set();
+  const junkPatch = (j) => { const p = {}; if (j.days.length) p.readDays = F.arrayRemove(...j.days); j.days.forEach((n) => { p[`readAt.${n}`] = F.deleteField(); }); j.quiz.forEach((k) => { p[`quiz.${k}`] = F.deleteField(); }); return p; };
+  function cleanJunk(list) {
+    list.forEach((u) => {
+      const j = u.junk; if (!j) return; const sig = u.id + JSON.stringify(j); if (tried.has(sig)) return; tried.add(sig);
+      if (u.id === myId) selfUpdate(junkPatch(j)).catch((e) => console.warn('clean', e));
+      else if (servant) F.updateDoc(F.doc(db, 'users', u.id), junkPatch(j)).catch((e) => console.warn('clean', u.id, e));
+    });
+  }
   const MAXU = 38; // القواعد بتسمح بـ٤٠ جهاز بالكتير، فبنسيب آخر ٢٠ لو العدد كبر
   const trimUids = (list) => { const l = (list || []).filter((x) => x !== uid); return l.length >= MAXU ? [...l.slice(-20), uid] : null; };
   const wait = (t) => new Promise((ok) => setTimeout(() => ok('queued'), t));
@@ -404,7 +440,7 @@ async function firebaseImpl() {
     async setRead(n, on) {
       await selfUpdate(on ? { readDays: F.arrayUnion(n), [`readAt.${n}`]: F.serverTimestamp(), lastSeen: F.serverTimestamp() } : { readDays: F.arrayRemove(n) });
     },
-    async answerChq(key, c, t) { await selfUpdate({ [`quiz.${key}`]: { c, t }, lastSeen: F.serverTimestamp() }); },
+    async answerChq(key, c, t) { await selfUpdate({ [`quiz.${key}`]: { c, t, at: F.serverTimestamp() }, lastSeen: F.serverTimestamp() }); },
     // ---- حظر أرقام الموبايل (المسؤولين): blockedPhones/{معرّف الرقم} بيمنع الدخول بالرقم ده من أي جهاز،
     // و bans/{uid} بيقفل القراءة والكتابة على الأجهزة اللي المشترك كان داخل منها
     async blockPhone(phone, note) { const id = await idOf(phone); return this.blockUser(id, phone, '', note); },
@@ -432,8 +468,8 @@ async function firebaseImpl() {
     async amen(id) { await F.updateDoc(F.doc(db, 'wall', id), { amens: F.increment(1) }); },
     async react(id, k) { try { await F.updateDoc(F.doc(db, 'wall', id), { [`reacts.${uid}`]: k ? { t: k, n: me().name } : F.deleteField() }); return true; } catch (e) { console.warn(e); return false; } },
     async removePost(id) { await F.deleteDoc(F.doc(db, 'wall', id)); },
-    async isServant() { try { return (await F.getDoc(F.doc(db, 'admins', uid))).exists(); } catch (e) { return false; } },
-    async unlock(code) { try { await F.setDoc(F.doc(db, 'admins', uid), { code, at: F.serverTimestamp() }); return true; } catch (e) { return false; } },
+    async isServant() { try { servant = (await F.getDoc(F.doc(db, 'admins', uid))).exists(); if (servant) cleanJunk(users); return servant; } catch (e) { return false; } },
+    async unlock(code) { try { await F.setDoc(F.doc(db, 'admins', uid), { code, at: F.serverTimestamp() }); servant = true; cleanJunk(users); return true; } catch (e) { return false; } },
     async setCode(code) { try { await F.setDoc(F.doc(db, 'secrets', 'servants'), { code }); } catch (e) { return false; } return this.unlock(code); },
     async contacts() { try { const q = await F.getDocs(F.collection(db, 'contacts')); return Object.fromEntries(q.docs.map((d) => [d.id, d.data().phone])); } catch (e) { return {}; } },
     async saveDay(n, data) { await F.setDoc(F.doc(db, 'days', String(n)), { ...data, at: F.serverTimestamp() }, { merge: true }); },

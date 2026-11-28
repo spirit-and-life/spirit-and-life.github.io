@@ -26,8 +26,9 @@ service cloud.firestore {
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.get('blocked', false) == resource.data.get('blocked', false)
         && resource.data.get('blocked', false) == false;
-      // المسؤولين: تعديل الاسم، وعلامة الحظر
-      allow update: if isServant() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'blocked'])
+      // المسؤولين: تعديل الاسم، وعلامة الحظر، ومسح القراءات والإجابات اللي اتسجلت قبل يومها
+      allow update: if isServant() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'blocked', 'readDays', 'readAt', 'quiz'])
+        && request.resource.data.readDays is list && request.resource.data.readDays.size() <= resource.data.readDays.size()
         && request.resource.data.name is string && request.resource.data.name.size() >= 2 && request.resource.data.name.size() <= 40
         && request.resource.data.get('blocked', false) is bool;
       allow delete: if isServant();

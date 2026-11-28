@@ -35,6 +35,7 @@ export const setClockOffset = (ms) => {
   try { const t = cairoOf(nowMs()); if (t > (localStorage.getItem(LASTDAY) || '')) localStorage.setItem(LASTDAY, t); } catch (e) { /* ignore */ }
 };
 export const nowMs = () => Date.now() + CLOCK;
+export const clockVerified = () => VERIFIED || DEMO;
 // ?date=YYYY-MM-DD لمحاكاة أي تاريخ: في الوضع التجريبي (?demo) بس، عشان محدش يفتح أيام جاية بيه
 const DEMO = (() => { try { return new URLSearchParams(location.search).has('demo'); } catch (e) { return false; } })();
 export function todayCairo() {
