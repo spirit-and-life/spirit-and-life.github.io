@@ -418,5 +418,14 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
   try { S.me = await init(); } catch (e) { console.error(e); }
   try { S.admin = await api.isServant(); } catch (e) { S.admin = false; }
   route();
-  if ('serviceWorker' in navigator && location.protocol === 'https:') { try { navigator.serviceWorker.register('sw.js'); } catch (e) { /* ignore */ } }
+  // تحديث تلقائي: لما ننشر نسخة جديدة، الموقع المفتوح (أو المتثبّت على الشاشة الرئيسية) بيعمل reload لوحده
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    try {
+      const hadCtl = !!navigator.serviceWorker.controller; let reloading = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => { if (!hadCtl || reloading) return; reloading = true; if (document.activeElement?.matches('input,textarea')) setTimeout(() => location.reload(), 4000); else location.reload(); });
+      const reg = await navigator.serviceWorker.register('sw.js');
+      let upAt = Date.now(); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && Date.now() - upAt > 6e4) { upAt = Date.now(); reg.update().catch(() => {}); } });
+      setInterval(() => reg.update().catch(() => {}), 15 * 6e4);
+    } catch (e) { /* ignore */ }
+  }
 })();
