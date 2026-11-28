@@ -147,7 +147,6 @@ function personModal(u) {
     <div class="dgrid">${DAYS.map((d) => `<i class="${d.date > t ? 'fu' : readState(u, d.n)}" title="اليوم ${d.n}">${ar(d.n)}</i>`).join('')}</div>
     <p class="legend2" style="justify-content:center;margin-top:8px"><i class="on"></i>في معاده <i class="la"></i>متأخر <i class="no"></i>فاته</p>
     <div class="actions">${phoneOf(u) ? waBtn(u, `سلام يا ${first(u.name)} 🌿`) : ''}<button class="btn ghost" id="cl">قفل</button></div>
-    <div class="actions"><button class="btn ghost block" id="bon">⭐ نقاط إضافية${u.bonus ? `: ${ar(u.bonus)}` : ''}</button></div>
     <div class="actions"><button class="btn ghost" id="ren">تعديل الاسم</button><button class="btn ghost" id="rm" style="color:var(--heart)">حذف المشترك</button></div>
     <div class="actions"><button class="btn ${u.blocked ? 'primary' : 'ghost'} block" id="blk" ${u.blocked ? '' : 'style="color:var(--heart)"'}>${u.blocked ? '✅ فك الحظر' : '🚫 حظر الرقم ده'}</button></div></div>`;
   document.body.appendChild(m); m.onclick = (e) => { if (e.target === m || e.target.id === 'cl') m.remove(); };
@@ -157,12 +156,6 @@ function personModal(u) {
     b.disabled = true;
     try { if (u.blocked) { await api.unblock(blockKey(u)); toast('اتفك الحظر ✓'); } else { await api.blockUser(u.id, phoneOf(u), u.name); toast('اتحظر الرقم 🚫'); } m.remove(); }
     catch (e) { console.error(e); b.disabled = false; toast('مقدرناش نحفظ… اتأكد إن قواعد Firebase الجديدة اتنشرت'); }
-  };
-  m.querySelector('#bon').onclick = async () => {
-    const v = prompt('النقاط الإضافية (بتتجمع على نقاطه في الترتيب، و٠ يلغيها)', String(u.bonus || 0)); if (v == null) return;
-    const n = toNum(v); if (!Number.isFinite(n) || Math.abs(n) > 10000) return toast('اكتب رقم صح');
-    try { await api.setBonus(u.id, n); toast(n ? `اتحفظت ${ar(n)} نقطة إضافية ✓` : 'اتلغت النقاط الإضافية'); m.remove(); }
-    catch (e) { console.error(e); toast('مقدرناش نحفظ… اتأكد إن قواعد Firebase الجديدة اتنشرت'); }
   };
   m.querySelector('#ren').onclick = async () => { const n = (prompt('الاسم الجديد', u.name) || '').trim(); if (n.length < 2) return; await api.adminRename(u.id, n); toast('اتعدّل الاسم ✓'); m.remove(); };
   m.querySelector('#rm').onclick = async (ev) => { const b = ev.currentTarget; if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = 'متأكد؟ اضغط تاني'; setTimeout(() => { delete b.dataset.sure; b.textContent = 'حذف المشترك'; }, 3000); return; } await api.adminDeleteUser(u.id); toast('اتحذف المشترك'); m.remove(); };
