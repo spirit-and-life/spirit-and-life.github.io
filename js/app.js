@@ -117,7 +117,7 @@ function verseHTML(d) {
   return `<section class="card vday" id="vday"><div class="between"><h2>آية اليوم</h2><button class="chip" id="vshare">🖼️ شاركها صورة</button></div><q>${esc(txt)}</q><cite>تكوين ${ar(c)}: ${ar(v)}</cite></section>`;
 }
 function lampPreview() {
-  const t = todayCairo(); const rows = S.users.map((u) => ({ u, s: userStats(u, t) })).sort((a, b) => b.s.onTime - a.s.onTime || b.s.read - a.s.read);
+  const t = todayCairo(); const rows = S.users.map((u) => ({ u, s: userStats(u, t) })).sort((a, b) => b.s.points - a.s.points || b.s.onTime - a.s.onTime || a.u.name.localeCompare(b.u.name, 'ar'));
   const i = rows.findIndex((r) => r.u.id === S.me.id); if (i < 0 || rows.length < 2) return '';
   const me = rows[i]; const lvl = lampLevel(me.s);
   return `<a class="card lamppre" href="#/journey/lamps"><span class="lp">${lamp(lvl, true)}</span><span class="grow"><b>فنارك: ${LAMP_NAMES[lvl - 1]} · ترتيبك ${ar(i + 1)} من ${ar(rows.length)}</b>

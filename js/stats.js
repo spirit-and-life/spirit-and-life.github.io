@@ -38,8 +38,8 @@ export function weekRange(today = todayCairo()) {
 }
 export function weekStats(u, today = todayCairo()) {
   const [s, e] = weekRange(today); const days = DAYS.filter((d) => d.date >= s && d.date <= e && d.date <= today);
-  let onTime = 0; days.forEach((d) => { if (readState(u, d.n) === 'ontime') onTime++; });
-  return { onTime, due: days.length, consistency: days.length ? Math.round((onTime / days.length) * 100) : 0 };
+  let onTime = 0, late = 0, qc = 0; days.forEach((d) => { const s = readState(u, d.n); if (s === 'ontime') onTime++; else if (s === 'late') late++; d.ch.forEach((c) => { qc += ((u.quiz || {})[c]?.c) || 0; }); });
+  return { onTime, late, qc, due: days.length, consistency: days.length ? Math.round((onTime / days.length) * 100) : 0, points: onTime * 10 + late * 5 + qc * 3 };
 }
 // إحصائية كل أسبوع لكل المشتركين (للوحة المسؤولين)
 export function weeksSummary(users, today = todayCairo()) {

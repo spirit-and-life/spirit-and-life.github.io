@@ -65,18 +65,21 @@ function boardLamps() {
   const range = S.boardRange || 'all'; const t = todayCairo();
   const rows = S.users.map((u) => { const s = userStats(u, t); const w = weekStats(u, t);
     const lvl = range === 'week' ? (w.onTime >= 7 ? 5 : w.onTime >= 5 ? 4 : w.onTime >= 3 ? 3 : w.onTime >= 1 ? 2 : 1) : lampLevel(s);
-    return { u, s, w, lvl, key: range === 'week' ? w.onTime * 1000 + w.consistency : s.onTime * 10000 + s.read * 100 + s.streak }; })
+    // الترتيب بالنقط: اليوم في معاده ١٠، المتأخر ٥، كل إجابة صح على أسئلة الأصحاحات ٣، وكل يوم متتالي ٢ (زي «نقطة نور»)
+    const pts = range === 'week' ? w.points : s.points;
+    return { u, s, w, lvl, pts, key: pts * 1000 + (range === 'week' ? w.onTime : s.onTime) }; })
     .sort((a, b) => b.key - a.key || a.u.name.localeCompare(b.u.name, 'ar'));
+  const qTxt = (q) => (q ? ` <i class="st">✓ ${ar(String(q).replace('.', '٫'))} إجابة صح</i>` : '');
   const top = rows.slice(0, 3); const order = [top[1], top[0], top[2]].filter(Boolean);
   const meRank = rows.findIndex((r) => r.u.id === S.me.id); const [ws, we] = weekRange(t);
   APP.innerHTML = `<div class="view">${topbar()}<div class="hello"><h1>لوحة الأمناء</h1><p class="verse-sub">«كُنْتَ أَمِينًا فِي الْقَلِيلِ فَأُقِيمُكَ عَلَى الْكَثِيرِ» (مت ٢٥: ٢١)</p></div>${segs('lamps')}
   <div class="range"><button class="${range === 'all' ? 'on' : ''}" data-r="all">الرحلة كلها</button><button class="${range === 'week' ? 'on' : ''}" data-r="week">الأسبوع ده</button></div>
-  <section class="altar"><p class="altar-note">نور الفنار بيزيد مع التزامك بالقراءة في معادها${range === 'week' ? `<br>من ${fmtDate(ws, false)} لـ ${fmtDate(we, false)}` : ''}</p>
+  <section class="altar"><p class="altar-note">نور الفنار بيزيد مع التزامك بالقراءة في معادها، والترتيب كمان بإجاباتك على أسئلة الأصحاحات${range === 'week' ? `<br>من ${fmtDate(ws, false)} لـ ${fmtDate(we, false)}` : ''}</p>
     <div class="podium">${order.map((r) => { const rank = rows.indexOf(r) + 1; return `<div class="pod p${rank} ${r.u.id === S.me.id ? 'me' : ''}"><div class="pl">${lamp(r.lvl)}</div><b class="pn">${esc(first(r.u.name))}</b>
-      <span class="ps">${LAMP_NAMES[r.lvl - 1]} · ${range === 'week' ? `${ar(r.w.onTime)} من ${ar(r.w.due)}` : `${ar(r.s.consistency)}٪`}</span><div class="step"><span>${ar(rank)}</span></div></div>`; }).join('')}</div></section>
+      <span class="ps">${LAMP_NAMES[r.lvl - 1]} · ${ar(r.pts)} نقطة</span><div class="step"><span>${ar(rank)}</span></div></div>`; }).join('')}</div></section>
   ${meRank >= 0 ? `<a class="mepill" href="#me-row">ترتيبك <b>${ar(meRank + 1)}</b> من ${ar(rows.length)} <small>فنارك: ${LAMP_NAMES[rows[meRank].lvl - 1]}</small></a>` : ''}
   <ol class="lamps">${rows.map((r, i) => `<li class="lrow ${r.u.id === S.me.id ? 'me' : ''}" ${r.u.id === S.me.id ? 'id="me-row"' : ''}><span class="rk">${ar(i + 1)}</span><span class="lp">${lamp(r.lvl, true)}</span><span class="ln"><b>${esc(r.u.name)}</b>
-    <small>${range === 'week' ? `${ar(r.w.onTime)} يوم في معاده من ${ar(r.w.due)}` : `${ar(r.s.onTime)} في معاده${r.s.late ? ` <i class="lt">${ar(r.s.late)} متأخر</i>` : ''}${r.s.streak > 1 ? ` <i class="st">${ar(r.s.streak)} متتالي</i>` : ''}`}</small></span><span class="pc">${ar(range === 'week' ? r.w.consistency : r.s.consistency)}٪</span></li>`).join('')}</ol>
+    <small>${range === 'week' ? `${ar(r.w.onTime)} يوم في معاده من ${ar(r.w.due)}${qTxt(r.w.qc)}` : `${ar(r.s.onTime)} في معاده${r.s.late ? ` <i class="lt">${ar(r.s.late)} متأخر</i>` : ''}${r.s.streak > 1 ? ` <i class="st">${ar(r.s.streak)} متتالي</i>` : ''}${qTxt(r.s.qc)}`}</small></span><span class="pc">${ar(r.pts)}<small> نقطة</small></span></li>`).join('')}</ol>
   ${foot()}</div>`;
   $$('.range button').forEach((b) => b.onclick = () => { S.boardRange = b.dataset.r; boardLamps(); });
 }
