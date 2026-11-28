@@ -51,7 +51,7 @@ function normUser(u) {
   const qTime = [], qDate = []; const quiz = {};
   Object.entries(u.quiz || {}).forEach(([k, q]) => { const n = DAY_OF_CH[k]; const at = ms(q && q.at);
     if (n && (byTime.includes(n) || tooEarly(n, at))) qTime.push(k); else if (n && (byDate.includes(n) || DAY_DATE[n] > today)) qDate.push(k); else quiz[k] = at ? { ...q, at } : q; });
-  const out = { ...u, readAt: ra, readDays: (u.readDays || []).filter((n) => !early.includes(n)), quiz, blocked: !!u.blocked };
+  const out = { ...u, readAt: ra, readDays: (u.readDays || []).filter((n) => !early.includes(n)), quiz, blocked: !!u.blocked, bonus: Number.isFinite(+u.bonus) ? +u.bonus : 0 };
   // اللي اتسجل قبل معاده مش بيظهر في أي مكان، وبيتمسح من البيانات (junk مخفي عن العرض)
   const days = sure ? early : byTime; const qk = sure ? [...qTime, ...qDate] : qTime;
   Object.defineProperty(out, 'junk', { value: days.length || qk.length ? { days, quiz: qk } : null, enumerable: false });
@@ -282,6 +282,7 @@ function demoImpl() {
     async logout() { store.del('me'); },
     async rename(name) { const u = me(); if (!u) return; u.name = name; save(); all(); },
     async adminRename(id, name) { const u = memo.users.find((x) => x.id === id); if (u) { u.name = name; save(); all(); } },
+    async setBonus(id, n) { const u = memo.users.find((x) => x.id === id); if (u) { u.bonus = n; save(); all(); } },
     async adminDeleteUser(id) { memo.users = memo.users.filter((x) => x.id !== id); save(); all(); },
     // حظر أرقام الموبايل (المفتاح في الوضع التجريبي هو الرقم نفسه)
     async blockPhone(phone, note) { const u = memo.users.find((x) => x.phone === phone); return this.blockUser(u ? u.id : '', phone, u ? u.name : '', note); },
@@ -348,7 +349,7 @@ async function firebaseImpl() {
   }
   function startSubs() {
     if (subs.length) return;
-    subs.push(F.onSnapshot(F.collection(db, 'users'), (s) => { users = s.docs.map((d) => { const x = d.data(); return normUser({ id: d.id, name: x.name, readDays: x.readDays, readAt: x.readAt, quiz: x.quiz, lastSeen: ms(x.lastSeen), blocked: x.blocked }); }); emit('users', users); if (!s.metadata.hasPendingWrites) cleanJunk(users); if (myId && !s.metadata.fromCache && !s.docs.some((d) => d.id === myId)) emit('expired', true); }, denied));
+    subs.push(F.onSnapshot(F.collection(db, 'users'), (s) => { users = s.docs.map((d) => { const x = d.data(); return normUser({ id: d.id, name: x.name, readDays: x.readDays, readAt: x.readAt, quiz: x.quiz, lastSeen: ms(x.lastSeen), blocked: x.blocked, bonus: x.bonus }); }); emit('users', users); if (!s.metadata.hasPendingWrites) cleanJunk(users); if (myId && !s.metadata.fromCache && !s.docs.some((d) => d.id === myId)) emit('expired', true); }, denied));
     subs.push(F.onSnapshot(F.query(F.collection(db, 'wall'), F.orderBy('at', 'desc'), F.limit(150)), (s) => {
       emit('wall', s.docs.map((d) => { const x = d.data(); return { id: d.id, ...x, at: ms(x.at) || Date.now() }; }));
     }));
@@ -436,6 +437,7 @@ async function firebaseImpl() {
     async logout() { store.del('me'); store.del('myName'); myId = null; },
     async rename(name) { await selfUpdate({ name, lastSeen: F.serverTimestamp() }); store.set('myName', name); },
     async adminRename(id, name) { await F.updateDoc(F.doc(db, 'users', id), { name }); },
+    async setBonus(id, n) { await F.updateDoc(F.doc(db, 'users', id), { bonus: n }); },
     async adminDeleteUser(id) { await F.deleteDoc(F.doc(db, 'users', id)); try { await F.deleteDoc(F.doc(db, 'contacts', id)); } catch (e) { /* ignore */ } },
     async setRead(n, on) {
       await selfUpdate(on ? { readDays: F.arrayUnion(n), [`readAt.${n}`]: F.serverTimestamp(), lastSeen: F.serverTimestamp() } : { readDays: F.arrayRemove(n) });

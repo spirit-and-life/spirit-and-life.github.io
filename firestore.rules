@@ -10,7 +10,7 @@ service cloud.firestore {
     function phoneBlocked(userId) { return exists(/databases/$(db)/documents/blockedPhones/$(userId)); }
     function owns(userId) { return member() && !phoneBlocked(userId) && request.auth.uid in get(/databases/$(db)/documents/users/$(userId)).data.uids; }
     function okUser(d) {
-      return d.keys().hasOnly(['name','uids','readDays','readAt','quiz','createdAt','lastSeen','blocked'])
+      return d.keys().hasOnly(['name','uids','readDays','readAt','quiz','createdAt','lastSeen','blocked','bonus'])
         && d.name is string && d.name.size() >= 2 && d.name.size() <= 40
         && d.uids is list && request.auth.uid in d.uids && d.uids.size() <= 40
         && d.readDays is list && d.readDays.size() <= 50;
@@ -20,14 +20,16 @@ service cloud.firestore {
     match /users/{id} {
       allow read: if member();
       allow create: if member() && id.matches('^[0-9a-f]{32}$') && !phoneBlocked(id)
-        && okUser(request.resource.data) && !('blocked' in request.resource.data);
+        && okUser(request.resource.data) && !('blocked' in request.resource.data) && !('bonus' in request.resource.data);
       // المشترك نفسه (أو دخوله من جهاز جديد بنفس الرقم): مش مسموح لو الرقم محظور، ومش مسموح يغيّر علامة الحظر
       allow update: if member() && !phoneBlocked(id) && okUser(request.resource.data)
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.get('blocked', false) == resource.data.get('blocked', false)
+        && request.resource.data.get('bonus', 0) == resource.data.get('bonus', 0)
         && resource.data.get('blocked', false) == false;
-      // المسؤولين: تعديل الاسم، وعلامة الحظر، ومسح القراءات والإجابات اللي اتسجلت قبل يومها
-      allow update: if isServant() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'blocked', 'readDays', 'readAt', 'quiz'])
+      // المسؤولين: تعديل الاسم، وعلامة الحظر، والنقاط الإضافية، ومسح القراءات والإجابات اللي اتسجلت قبل يومها
+      allow update: if isServant() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'blocked', 'bonus', 'readDays', 'readAt', 'quiz'])
+        && request.resource.data.get('bonus', 0) is number && request.resource.data.get('bonus', 0) >= -10000 && request.resource.data.get('bonus', 0) <= 10000
         && request.resource.data.readDays is list && request.resource.data.readDays.size() <= resource.data.readDays.size()
         && request.resource.data.name is string && request.resource.data.name.size() >= 2 && request.resource.data.name.size() <= 40
         && request.resource.data.get('blocked', false) is bool;

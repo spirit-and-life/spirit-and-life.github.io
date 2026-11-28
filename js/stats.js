@@ -20,7 +20,7 @@ export function userStats(u, today = todayCairo()) {
   const lastAt = Math.max(0, ...Object.values(u.readAt || {}));
   return { read: read.size, onTime, late, missed: due.filter((d) => d.date < today && !read.has(d.n)).length, due: due.length,
     consistency: Math.round((onTime / (due.length || 1)) * 100), progress: read.size / TOTAL, streak: st, qc, qt, lastAt,
-    points: onTime * 10 + late * 5 + qc * 3 + st * 2, badges: BADGES.filter((b) => b.test(read)).length,
+    points: onTime * 10 + late * 5 + qc * 3 + st * 2 + (+u.bonus || 0), badges: BADGES.filter((b) => b.test(read)).length,
     readToday: !!due.length && due[due.length - 1].date === today && read.has(due[due.length - 1].n) };
 }
 // مستوى الفنار (١–٥): بيزيد مع الالتزام، والقراءة المتأخرة بنص نقطة
@@ -39,7 +39,7 @@ export function weekRange(today = todayCairo()) {
 export function weekStats(u, today = todayCairo()) {
   const [s, e] = weekRange(today); const days = DAYS.filter((d) => d.date >= s && d.date <= e && d.date <= today);
   let onTime = 0, late = 0, qc = 0; days.forEach((d) => { const s = readState(u, d.n); if (s === 'ontime') onTime++; else if (s === 'late') late++; d.ch.forEach((c) => { qc += ((u.quiz || {})[c]?.c) || 0; }); });
-  return { onTime, late, qc, due: days.length, consistency: days.length ? Math.round((onTime / days.length) * 100) : 0, points: onTime * 10 + late * 5 + qc * 3 };
+  return { onTime, late, qc, due: days.length, consistency: days.length ? Math.round((onTime / days.length) * 100) : 0, points: onTime * 10 + late * 5 + qc * 3 + (+u.bonus || 0) };
 }
 // إحصائية كل أسبوع لكل المشتركين (للوحة المسؤولين)
 export function weeksSummary(users, today = todayCairo()) {
