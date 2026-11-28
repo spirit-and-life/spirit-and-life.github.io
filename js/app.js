@@ -1,5 +1,5 @@
 import { setClockOffset, DAYS, TOTAL, START, END, BADGES, CH_TITLES, ar, fmtDate, todayCairo, status, dueDays, streak, chLabel, dayTitle, diffDays, addDays, weekday, keyVerse, weekOf } from './plan.js';
-import { init, api, on, mode, normPhone, validPhone, initialOf, REACTS } from './data.js';
+import { init, api, on, mode, normPhone, validPhone, initialOf, REACTS, BLOCKED_MSG } from './data.js';
 import { askModal, myQuestionsHTML, verseModal } from './extras.js';
 import { $, $$, esc, APP, NAV, S, reduce, first, avatar, timeAgo, toast, vibrate, myRead, meU, greeting, loadText, ICON, topbar, foot, burst, plural } from './ui.js';
 import { userStats, readState, nextBadge, weekRange, lampLevel, LAMP_NAMES } from './stats.js';
@@ -19,12 +19,30 @@ async function markRead(n, btn) {
   const r = btn?.getBoundingClientRect(); if (r) burst(r.left + r.width / 2, r.top + r.height / 2);
   btn?.classList.add('pop'); vibrate([18, 40, 30]);
   document.querySelector('.wellc')?.classList.add('drawn');
-  try { await api.setRead(n, true); } catch (e) { console.error(e); document.querySelector('.wellc')?.classList.remove('drawn'); toast('حصلت مشكلة في الحفظ… جرّب تاني'); return; }
+  try { await api.setRead(n, true); } catch (e) { console.error(e); document.querySelector('.wellc')?.classList.remove('drawn'); btn?.classList.remove('pop'); saveFailed(e); return false; }
   const after = new Set([...before, n]);
   const got = BADGES.filter((b) => !b.test(before) && b.test(after));
   const dd = DAYS.find((x) => x.n === n);
   toast(n === dayToday()?.n ? 'الدلو طلع مليان… ربنا يبارك قرايتك 💧' : (dd && dd.date < todayCairo() ? `اليوم ${ar(n)} اتسجّل إنك قريته متأخر ✓` : `تمام! اليوم ${ar(n)} اتسجّل ✓`));
   if (got.length) setTimeout(() => badgeModal(got[0]), 900);
+  return true;
+}
+// رسالة واضحة حسب سبب فشل الحفظ
+function saveFailed(e) {
+  const c = e && e.code;
+  if (c === 'blocked') { S.me && (S.me.blocked = true); route(); return; }
+  if (c === 'expired') { sessionExpired(); return; }
+  if (!navigator.onLine) return toast('مفيش نت دلوقتي… اتصل بالنت وجرّب تاني');
+  toast('حصلت مشكلة في الحفظ… جرّب تاني');
+}
+// المشترك اتمسح أو الجلسة باظت: نرجّعه لصفحة الدخول بنفس الاسم، ورقمه بيرجّعله كل بياناته
+async function sessionExpired() {
+  const name = S.me?.name || ''; try { await api.logout(); } catch (e) { /* ignore */ }
+  S.me = null; S.prefillName = name; route(); toast('محتاجين تدخل رقمك تاني عشان نكمّل 🙏');
+}
+function vBlocked() {
+  NAV.hidden = true;
+  APP.innerHTML = `<div class="view"><section class="card empty" style="text-align:center;margin-top:40px"><div class="big">🚫</div><h2>الحساب ده موقوف</h2><p class="sub">${BLOCKED_MSG}</p></section></div>`;
 }
 const dayToday = () => { const s = status(); return s.phase === 'reading' ? s.day : null; };
 function badgeModal(b) {
@@ -87,7 +105,7 @@ function weekHTML() {
   const t = todayCairo(); const [s] = weekRange(t); const u = meU();
   const cells = Array.from({ length: 7 }, (_, i) => { const dt = addDays(s, i); const d = DAYS.find((x) => x.date === dt); let cls = 'off', ic = '';
     if (d) { const st = readState(u, d.n); if (st === 'ontime') { cls = 'ok'; ic = '✓'; } else if (st === 'late') { cls = 'late'; ic = '⏰'; } else if (dt < t) { cls = 'miss'; ic = '!'; } else if (dt === t) { cls = 'now'; ic = '•'; } else cls = 'fu'; }
-    return `<a class="wd ${cls}" ${d ? `href="#/read/${d.n}"` : ''}><i>${ic}</i><span>${['أحد', 'إثنين', 'ثلاثاء', 'أربعاء', 'خميس', 'جمعة', 'سبت'][weekday(dt)]}</span><small>${ar(+dt.slice(8))}</small></a>`; });
+    return `<a class="wd ${cls}" ${d && dt <= t ? `href="#/read/${d.n}"` : ''}><i>${ic}</i><span>${['أحد', 'إثنين', 'ثلاثاء', 'أربعاء', 'خميس', 'جمعة', 'سبت'][weekday(dt)]}</span><small>${ar(+dt.slice(8))}</small></a>`; });
   const w = weekRangeDays(t); const done = w.filter((d) => ['ontime', 'late'].includes(readState(u, d.n))).length;
   return `<section class="card week7"><div class="between"><h2>أسبوعك</h2><a class="chip" href="#/plan">الخطة</a></div><div class="wrow">${cells.join('')}</div>
     ${w.length ? `<div class="wbar"><i style="width:${Math.round(done / w.length * 100)}%"></i></div><p class="sub">${ar(done)} من ${ar(w.length)} — ${ar(Math.round(done / w.length * 100))}٪</p>` : ''}</section>`;
@@ -162,7 +180,7 @@ function vToday() {
   APP.innerHTML = `<div class="view">${topbar()}<div class="stagger"><div class="hello"><h1>${greeting()} يا ${esc(name)}</h1><p>${st.phase === 'reading' ? 'جاهز لرحلة النهارده؟' : 'خليك قريب… الرحلة مستمرة.'}</p></div>${st.phase === 'reading' ? nudgeHTML() : ''}<div id="exb"></div>${hero}${well}
     ${st.phase === 'reading' ? `<section class="card"><div class="between"><h2>أنوار البحر</h2><span class="sub">كل واحد يقرا يطلع نوره</span></div>${lightsHTML(st.day.n)}</section>${reflHTML(st.day.n)}${verseHTML(st.day)}${weekHTML()}${quizCTA(st.day)}` : weekHTML()}
     ${lampPreview()}${familyHTML()}<a class="card cta" href="#/wall/ask"><span class="ei">❓</span><span class="grow"><b>عندك سؤال أو محتاج تفسير لآية؟</b><small>اسأل المسؤولين، والرد هيوصلك على الواتساب</small></span>${ICON.back}</a>${missedHTML()}${countdownHTML()}${foot()}</div></div>`;
-  $('#readNow')?.addEventListener('click', (e) => markRead(st.day.n, e.currentTarget));
+  $('#readNow')?.addEventListener('click', async (e) => { const b = e.currentTarget; if (b.disabled) return; b.disabled = true; if (!(await markRead(st.day.n, b))) b.disabled = false; });
   const lg = $('#lights'); if (lg && st.phase === 'reading') { lg.addEventListener('click', () => openSea(st.day.n)); lg.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openSea(st.day.n); } }); }
   examBanner($('#exb'));
   if (st.phase === 'reading') {
@@ -174,6 +192,13 @@ function vToday() {
 // ---------- قراءة جوه الموقع ----------
 async function vRead(n, tab = 0) {
   const d = DAYS.find((x) => x.n === +n); if (!d) { location.hash = '#/today'; return; }
+  // أصحاح يوم لسه ماجاش: مقفول تمامًا (مفيش نص ولا أسئلة ولا صوت)، لحد ما يومه ييجي
+  if (notYet(d.n)) {
+    APP.innerHTML = `<div class="view reader"><div class="rhead"><a class="iconbtn" href="#/today" aria-label="رجوع">${ICON.back}</a><span class="sp"></span><div class="tabs grow"><span class="tab on">${chLabel(d)}</span></div></div>
+      <section class="card empty" style="text-align:center;margin-top:24px"><div class="big">🔒</div><h2>الأصحاح ده لسه مقفول</h2>
+      <p class="sub">بيتفتح يوم ${fmtDate(d.date)}. خلّينا نمشي مع بعض يوم بيوم 🙂</p><a class="btn primary block" style="margin-top:14px" href="#/today">ارجع لقراءة النهارده</a></section></div>`;
+    scrollTo(0, 0); return;
+  }
   tab = Math.min(+tab || 0, d.ch.length - 1);
   APP.innerHTML = `<div class="view reader"><div class="rhead"><a class="iconbtn" href="#/today" aria-label="رجوع">${ICON.back}</a><span class="sp"></span><div class="tabs grow">${d.ch.map((c, i) => `<a class="tab ${i === tab ? 'on' : ''}" href="#/read/${d.n}/${i}">تكوين ${ar(c)}</a>`).join('')}</div>
     <button class="iconbtn" id="tts" aria-label="اسمع الأصحاح">${ICON.ear}</button><button class="iconbtn" id="night" aria-label="وضع القراءة الليلي">${ICON.moon}</button><button class="iconbtn" id="fsm" aria-label="تصغير الخط">${ICON.minus}</button><button class="iconbtn" id="fsp" aria-label="تكبير الخط">${ICON.plus}</button></div>
@@ -181,24 +206,24 @@ async function vRead(n, tab = 0) {
   const T = await loadText(); const c = d.ch[tab]; const vs = T[c];
   const chapEl = $('#chap'); if (!chapEl) return;
   const late = d.date < todayCairo();
-  chapEl.innerHTML = `<p class="eyebrow" style="text-align:center">اليوم ${ar(d.n)} — ${fmtDate(d.date)}${late && !myRead().has(d.n) ? ' · هيتسجل متأخر' : ''}${notYet(d.n) ? ' · لسه ماجاش معاده (معاينة بس)' : ''}</p><h2>سفر التكوين</h2><div class="orn">الأصحاح ${ar(c)} · ${CH_TITLES[c - 1]}</div>
+  chapEl.innerHTML = `<p class="eyebrow" style="text-align:center">اليوم ${ar(d.n)} — ${fmtDate(d.date)}${late && !myRead().has(d.n) ? ' · هيتسجل متأخر' : ''}</p><h2>سفر التكوين</h2><div class="orn">الأصحاح ${ar(c)} · ${CH_TITLES[c - 1]}</div>
     <div class="text" style="--fs:${S.fs}px">${vs.map((v, i) => `<span class="v" data-v="${i + 1}" data-t="${esc(v)}"><sup>${ar(i + 1)}</sup>${esc(v)}</span> `).join('')}</div><div id="cquiz"></div>
-    <div class="endread">${tab < d.ch.length - 1 ? `<a class="btn primary block" href="#/read/${d.n}/${tab + 1}">الأصحاح اللي بعده ←</a>` : (myRead().has(d.n) ? `<button class="btn done on block" disabled>${ICON.check} قريت اليوم ده</button>` : notYet(d.n) ? `<button class="btn ghost block" disabled>التسجيل بيتفتح ${fmtDate(d.date)}</button>` : '<button class="btn red block readbtn" id="rdone">خلّصت… قريت ✓</button>')}
+    <div class="endread">${tab < d.ch.length - 1 ? `<a class="btn primary block" href="#/read/${d.n}/${tab + 1}">الأصحاح اللي بعده ←</a>` : (myRead().has(d.n) ? `<button class="btn done on block" disabled>${ICON.check} قريت اليوم ده</button>` : '<button class="btn red block readbtn" id="rdone">خلّصت… قريت ✓</button>')}
     <p class="hint">دوس على أي آية عشان تختارها: تشاركها في «آيات لمستنا»، أو تسأل المسؤولين عنها</p></div>
     <div class="selbar" id="selbar"><button class="btn light" id="share">✨ آية لمستني</button><button class="btn light" id="simg">🖼️ صورة</button><button class="btn light" id="sask">❓ اسأل</button><button class="btn ghost" id="copy">نسخ</button></div>`;
   $$('body > .selbar').forEach((x) => x.remove()); document.body.appendChild($('#selbar')); // الشريط لازم يعيش برّه العنصر المتحرك عشان position:fixed يتحسب من الشاشة
   const sel = new Set(); const upd = () => $('#selbar').classList.toggle('show', sel.size > 0);
   $$('.v', chapEl).forEach((el) => el.addEventListener('click', () => { const k = +el.dataset.v; sel.has(k) ? sel.delete(k) : sel.add(k); el.classList.toggle('sel'); upd(); }));
   const selText = () => { const ks = [...sel].sort((a, b) => a - b); return { text: ks.map((k) => vs[k - 1]).join(' '), ref: `تكوين ${ar(c)}: ${ar(ks[0])}${ks.length > 1 ? '-' + ar(ks[ks.length - 1]) : ''}` }; };
-  $('#share').onclick = async () => { const s = selText(); await api.post('verse', s.text, s.ref); toast('اتشاركت في «آيات لمستنا» ✨'); $$('.v.sel').forEach((x) => x.classList.replace('sel', 'mark')); sel.clear(); upd(); };
+  $('#share').onclick = async () => { const s = selText(); try { await api.post('verse', s.text, s.ref); } catch (e) { console.error(e); return saveFailed(e); } toast('اتشاركت في «آيات لمستنا» ✨'); $$('.v.sel').forEach((x) => x.classList.replace('sel', 'mark')); sel.clear(); upd(); };
   $('#simg').onclick = async () => { const s = selText(); await shareVerseImage(s.text, s.ref); };
   $('#sask').onclick = () => { const s = selText(); askModal(s); $$('.v.sel').forEach((x) => x.classList.remove('sel')); sel.clear(); upd(); };
   ttsSetup($('#tts'), $$('.v', chapEl));
-  if (notYet(d.n)) $('#cquiz').innerHTML = `<section class="card quiz done"><h2>اختبر نفسك</h2><p class="sub">الأسئلة بتفتح يوم ${fmtDate(d.date)}، مع قراية اليوم.</p></section>`; else chapterQuiz($('#cquiz'), String(c), `تكوين ${ar(c)}`);
+  chapterQuiz($('#cquiz'), String(c), `تكوين ${ar(c)}`);
   const applyNight = () => document.body.classList.toggle('night', !!S.night); try { S.night = localStorage.getItem('ruh:night') === '1'; } catch (e) { /* ignore */ } applyNight();
   $('#night').onclick = () => { S.night = !S.night; applyNight(); try { localStorage.setItem('ruh:night', S.night ? '1' : '0'); } catch (e) { /* ignore */ } };
   $('#copy').onclick = async () => { const s = selText(); try { await navigator.clipboard.writeText(`«${s.text}» (${s.ref})`); toast('اتنسخت'); } catch (e) { toast('مش قادر أنسخ هنا'); } };
-  $('#rdone')?.addEventListener('click', async (e) => { await markRead(d.n, e.currentTarget); setTimeout(() => { location.hash = '#/today'; }, 1500); });
+  $('#rdone')?.addEventListener('click', async (e) => { const b = e.currentTarget; if (b.disabled) return; b.disabled = true; const ok = await markRead(d.n, b); if (ok) setTimeout(() => { location.hash = '#/today'; }, 1500); else b.disabled = false; });
   const setFs = (v) => { S.fs = Math.max(16, Math.min(32, v)); $('.text').style.setProperty('--fs', S.fs + 'px'); try { localStorage.setItem('ruh:fs', S.fs); } catch (e) { /* ignore */ } };
   $('#fsp').onclick = () => setFs(S.fs + 2); $('#fsm').onclick = () => setFs(S.fs - 2);
   scrollTo(0, 0);
@@ -211,11 +236,13 @@ function vPlan() {
     const w = weekOf(x.n);
     if (w !== wk) { if (wk >= 0) html += '</div>'; wk = w; html += `<div class="week"><h3>الأسبوع ${ar(w + 1)}، من ${fmtDate(x.date, false)}</h3>`; }
     const cls = r.has(x.n) ? 'done' : x.date === t ? 'today' : x.date < t ? 'missed' : 'future';
-    html += `<a class="pday ${cls}" href="#/read/${x.n}"><span class="n">${ar(x.n)}</span><span class="t"><b>${chLabel(x)} — ${dayTitle(x)}</b><small>${fmtDate(x.date)}${r.has(x.n) && readState(meU(), x.n) === 'late' ? ' <i class="latepill">قريته متأخر</i>' : ''}</small></span>${cls === 'done' ? `<span class="check">${ICON.check}</span>` : cls === 'missed' ? '<span class="st">كمّله</span>' : cls === 'today' ? '<span class="st">النهارده</span>' : ''}</a>`;
+    const fu = x.date > t; // الأيام الجاية: من غير لينك، وبقفل
+    html += `<${fu ? 'div' : 'a'} class="pday ${cls}" ${fu ? `data-lock="${x.n}" aria-disabled="true"` : `href="#/read/${x.n}"`}><span class="n">${ar(x.n)}</span><span class="t"><b>${chLabel(x)} — ${dayTitle(x)}</b><small>${fmtDate(x.date)}${r.has(x.n) && readState(meU(), x.n) === 'late' ? ' <i class="latepill">قريته متأخر</i>' : ''}</small></span>${cls === 'done' ? `<span class="check">${ICON.check}</span>` : cls === 'missed' ? '<span class="st">كمّله</span>' : cls === 'today' ? '<span class="st">النهارده</span>' : fu ? '<span class="st">🔒</span>' : ''}</${fu ? 'div' : 'a'}>`;
   });
   html += '</div>';
   APP.innerHTML = `<div class="view">${topbar()}<div class="hello"><h1>الخطة كلها</h1><p>${ar(TOTAL)} يوم من ${fmtDate(START, false)} لحد ${fmtDate(END, false, true)}، وبنرتاح يوم الجمعة</p></div>
   <div class="card" style="padding:14px 16px"><div class="between"><span class="sub">قريت</span><b>${ar(r.size)} / ${ar(TOTAL)}</b></div><div class="prog light"><i style="width:${(r.size / TOTAL) * 100}%"></i></div></div>${html}${foot()}</div>`;
+  $$('[data-lock]').forEach((el) => el.onclick = () => { const x = DAYS.find((y) => y.n === +el.dataset.lock); toast(`🔒 بيتفتح يوم ${fmtDate(x.date)}`); });
   const tEl = $('.pday.today'); if (tEl) setTimeout(() => tEl.scrollIntoView({ block: 'center', behavior: reduce ? 'auto' : 'smooth' }), 300);
 }
 
@@ -278,12 +305,12 @@ async function vWall(tabArg) {
   ${compose}
   <div class="stagger">${tab === 'ask' ? myQuestionsHTML(S.myq || []) : list.length ? list.map(post).join('') : '<div class="card" style="text-align:center"><p class="muted">لسه مفيش حاجة هنا… كن أول واحد يشارك 🤍</p></div>'}</div>${foot()}</div>`;
   $$('.seg button').forEach((b) => b.onclick = () => { location.hash = '#/wall/' + b.dataset.t; });
-  $$('[data-amen]').forEach((b) => b.onclick = async () => { const id = b.dataset.amen; const s = amenSet(); if (s.has(id)) return; s.add(id); localStorage.setItem('ruh:amen', JSON.stringify([...s])); vibrate(15); const r = b.getBoundingClientRect(); burst(r.left + r.width / 2, r.top, 30); await api.amen(id); });
+  $$('[data-amen]').forEach((b) => b.onclick = async () => { const id = b.dataset.amen; const s = amenSet(); if (s.has(id)) return; s.add(id); localStorage.setItem('ruh:amen', JSON.stringify([...s])); vibrate(15); const r = b.getBoundingClientRect(); burst(r.left + r.width / 2, r.top, 30); try { await api.amen(id); } catch (e) { console.error(e); s.delete(id); localStorage.setItem('ruh:amen', JSON.stringify([...s])); saveFailed(e); } });
   $$('[data-del]').forEach((b) => b.onclick = async () => { if (b.dataset.sure) { await api.removePost(b.dataset.del); toast('اتمسح'); } else { b.dataset.sure = '1'; b.textContent = 'متأكد؟'; b.style.color = 'var(--heart)'; setTimeout(() => { delete b.dataset.sure; b.textContent = 'حذف'; b.style.color = ''; }, 3000); } });
   if (tab === 'ask') { $('#ask').onclick = () => askModal(); return; }
   if (tab === 'prayer') {
     $('#ptext').oninput = (e) => { S.prayDraft = e.target.value; };
-    $('#psend').onclick = async () => { const t = $('#ptext').value.trim(); if (t.length < 3) return toast('اكتب طلبتك الأول 🙂'); $('#psend').disabled = true; await api.post('prayer', t, ''); S.prayDraft = ''; $('#ptext').value = ''; $('#psend').disabled = false; toast('طلبتك وصلت… هنصلّي لك 🙏'); };
+    $('#psend').onclick = async () => { const t = $('#ptext').value.trim(); if (t.length < 3) return toast('اكتب طلبتك الأول 🙂'); $('#psend').disabled = true; try { await api.post('prayer', t, ''); } catch (e) { console.error(e); $('#psend').disabled = false; return saveFailed(e); } S.prayDraft = ''; $('#ptext').value = ''; $('#psend').disabled = false; toast('طلبتك وصلت… هنصلّي لك 🙏'); };
     return;
   }
   $('#vnew').onclick = () => verseModal();
@@ -303,7 +330,7 @@ function vMe() {
     <section class="card"><h2>بياناتي</h2><div class="field" style="margin-top:10px"><input id="nm" value="${esc(S.me.name)}" placeholder=" " maxlength="40"><label for="nm">الاسم</label></div>
     <div class="actions" style="margin-top:4px"><button class="btn primary" id="save">حفظ الاسم</button><button class="btn ghost" id="out">خروج</button></div></section>${foot()}</div></div>`;
   $('#cert').onclick = () => certModal(r.size >= TOTAL);
-  $('#save').onclick = async () => { const n = $('#nm').value.trim(); if (n.length < 2) return toast('اكتب اسمك'); toast('اتحفظ ✓'); try { await api.rename(n); } catch (e) { /* ignore */ } };
+  $('#save').onclick = async () => { const n = $('#nm').value.trim(); if (n.length < 2) return toast('اكتب اسمك'); try { await api.rename(n); toast('اتحفظ ✓'); } catch (e) { console.error(e); saveFailed(e); } };
   $('#out').onclick = async () => { await api.logout(); S.me = null; route(); };
 }
 function certModal(real) {
@@ -321,7 +348,7 @@ function vOnboard() {
     <div class="stage" aria-hidden="true"><div class="world" id="world">${introLayers()}</div></div>
     <div class="otitle"><h1>روح وحياة</h1><div class="en">SPIRIT &amp; LIFE</div><p class="verse">«الكَلامُ الَّذي أُكَلِّمُكُمْ بهِ هو روحٌ وحَياةٌ»<small>يوحنا ٦: ٦٣</small></p></div>
     <form class="oform" id="oform" novalidate>
-      <div class="field"><input id="iname" autocomplete="name" placeholder=" " maxlength="40" required><label for="iname">اسمك</label></div>
+      <div class="field"><input id="iname" autocomplete="name" placeholder=" " maxlength="40" required value="${esc(S.prefillName || '')}"><label for="iname">اسمك</label></div>
       <div class="field"><input id="iphone" type="tel" inputmode="tel" autocomplete="tel" placeholder=" " maxlength="14" required><label for="iphone">رقم الموبايل</label></div>
       <p class="err" id="oerr"></p>
       <button class="btn red block" id="ogo">يلا نبدأ الرحلة</button>
@@ -337,7 +364,7 @@ function vOnboard() {
     if (!validPhone(p)) return ($('#oerr').textContent = 'رقم الموبايل لازم يكون ١١ رقم ويبدأ بـ 01');
     $('#oerr').textContent = ''; $('#ogo').disabled = true; $('#ogo').textContent = 'لحظة…';
     try { S.me = await api.login(n, p); const r = $('#ogo').getBoundingClientRect(); burst(r.left + r.width / 2, r.top, 140); setTimeout(() => { APP.classList.remove('full'); if (!/^#\/(admin|khadem|exam)/.test(location.hash)) location.hash = '#/today'; route(); }, 700); }
-    catch (err) { console.error(err); $('#oerr').textContent = 'حصلت مشكلة في الاتصال… جرّب تاني'; $('#ogo').disabled = false; $('#ogo').textContent = 'يلا نبدأ الرحلة'; }
+    catch (err) { console.error(err); $('#oerr').textContent = err.code === 'blocked' ? BLOCKED_MSG : !navigator.onLine ? 'مفيش نت دلوقتي… اتصل بالنت وجرّب تاني' : 'حصلت مشكلة في الاتصال… جرّب تاني'; $('#ogo').disabled = false; $('#ogo').textContent = 'يلا نبدأ الرحلة'; }
   });
 }
 
@@ -346,6 +373,7 @@ function route() {
   $$('body > .selbar').forEach((x) => x.remove());
   if (!S.me) return vOnboard();
   APP.classList.remove('full');
+  if (S.me.blocked) return vBlocked();
   { const rr = (location.hash || '#/today').split('/')[1]; NAV.hidden = rr === 'read' || rr === 'exam'; document.body.classList.toggle('reading', rr === 'read'); }
   let [, r = 'today', a, b] = (location.hash || '#/today').split('/');
   if (r === 'khadem' || r === 'servants') r = 'admin';
@@ -359,7 +387,14 @@ function route() {
   if (!same && r !== 'journey' && r !== 'plan' && r !== 'read') scrollTo(0, 0);
 }
 let rt; const pendK = new Set(); const rerender = (kinds) => () => { kinds.forEach((k) => pendK.add(k)); clearTimeout(rt); rt = setTimeout(() => { const ks = new Set(pendK); pendK.clear(); const r = (location.hash.split('/')[1] || 'today'); const sub = location.hash.split('/')[2]; if (r === 'admin' && ['bank', 'exams', 'word', 'asks', 'reports'].includes(sub)) return; if (S.me && ks.has(r) && !document.activeElement?.matches('input,textarea,select')) route(); }, 120); };
-on('users', (u) => { S.users = u; if (S.me) { const m = u.find((x) => x.id === S.me.id); if (m) S.me = m; } rerender(['today', 'journey', 'plan', 'me', 'admin'])(); });
+// المحظورين مش بيظهروا في البحر ولا الترتيب ولا الإحصائيات (المسؤولين بيشوفوهم في «المشتركين» بس)
+on('users', (u) => {
+  S.allUsers = u; S.users = u.filter((x) => !x.blocked);
+  if (S.me) { const m = u.find((x) => x.id === S.me.id); if (m) { const wasBlocked = !!S.me.blocked; S.me = m; if (m.blocked !== wasBlocked) { route(); return; } } }
+  rerender(['today', 'journey', 'plan', 'me', 'admin'])();
+});
+on('blocked', () => { if (S.me && !S.me.blocked) { S.me = { ...S.me, blocked: true }; route(); } });
+on('expired', () => { if (S.me) sessionExpired(); });
 on('wall', (w) => { S.wall = w; rerender(['wall', 'today'])(); });
 on('myq', (q) => { S.myq = q; rerender(['wall'])(); });
 on('days', (d) => { S.days = d; rerender(['today', 'admin'])(); });
@@ -367,9 +402,19 @@ on('chq', (d) => { S.chq = d; rerender(['admin'])(); });
 on('exams', (d) => { S.exams = d; rerender(['today', 'journey', 'admin'])(); });
 addEventListener('hashchange', route);
 
+// ساعة السيرفر: عند الفتح، ولما النت يرجع، ولما الصفحة ترجع قدّام المستخدم (كل ١٠ دقايق بالكتير)
+let clockAt = 0;
+async function syncClock() {
+  try { const t0 = Date.now(); const r = await fetch('index.html', { method: 'HEAD', cache: 'no-store' }); const d = Date.parse(r.headers.get('date') || ''); if (d) { setClockOffset(d + (Date.now() - t0) / 2 - Date.now()); clockAt = Date.now(); return true; } } catch (e) { /* ignore */ }
+  return false;
+}
+const resync = async () => { if (Date.now() - clockAt < 6e5 && clockAt) return; const before = todayCairo(); if (await syncClock() && S.me && todayCairo() !== before && !document.activeElement?.matches('input,textarea,select')) route(); };
+addEventListener('online', resync);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') resync(); });
+
 (async () => {
   APP.innerHTML = `<div class="boot">${shipMark('boot-ship ship-bob')}</div>`;
-  try { const t0 = Date.now(); const r = await fetch('index.html', { method: 'HEAD', cache: 'no-store' }); const d = Date.parse(r.headers.get('date') || ''); if (d) setClockOffset(d + (Date.now() - t0) / 2 - Date.now()); } catch (e) { /* ignore */ }
+  await syncClock();
   try { S.me = await init(); } catch (e) { console.error(e); }
   try { S.admin = await api.isServant(); } catch (e) { S.admin = false; }
   route();

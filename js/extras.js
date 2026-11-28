@@ -14,8 +14,11 @@ function defaultChapter() {
 
 // اختيار آية: السفر ← الأصحاح ← من آية ← لحد آية (أقصى حاجة ٥ آيات)، والنص بيتكتب لوحده
 // «keep» كائن بيفضل محفوظ بين إعادات رسم الصفحة، فالاختيار ما يرجعش للأول
-export async function versePicker(host, { optional = false, keep = {} } = {}) {
-  const T = await loadText(); const total = Object.keys(T).length;
+// المشتركين بيختاروا من الأصحاحات اللي يومها جه بس؛ المسؤولين (all) من السفر كله
+export async function versePicker(host, { optional = false, keep = {}, all = false } = {}) {
+  const T = await loadText(); const opened = Math.max(0, ...dueDays().flatMap((d) => d.ch));
+  const total = all ? Object.keys(T).length : Math.min(opened, Object.keys(T).length);
+  if (!total) { host.innerHTML = optional ? '' : '<p class="muted" style="text-align:center">لسه مفيش أصحاحات اتفتحت… الرحلة لسه هتبدأ.</p>'; return () => null; }
   if (!keep.ch) Object.assign(keep, { ch: defaultChapter(), from: 1, to: 1, on: !optional });
   const st = keep;
   const draw = () => {
@@ -52,7 +55,9 @@ export async function verseModal() {
   try { get = await versePicker($('#vmp', m), { keep: (S.vpWall = S.vpWall || {}) }); } catch (e) { console.warn(e); $('#vmp', m).innerHTML = '<p class="muted" style="text-align:center">مقدرناش نحمّل الكتاب، جرّب تاني.</p>'; }
   $('#vms', m).onclick = async () => {
     const v = get && get(); if (!v || !v.text) return toast('اختار الآية الأول 🙂');
-    $('#vms', m).disabled = true; await api.post('verse', v.text, v.ref, $('#vmn', m).value.trim()); close(); toast('اتشاركت ✨'); burst(innerWidth / 2, innerHeight / 2, 50);
+    $('#vms', m).disabled = true;
+    try { await api.post('verse', v.text, v.ref, $('#vmn', m).value.trim()); } catch (e) { console.error(e); $('#vms', m).disabled = false; return toast(e.code === 'blocked' ? e.message : 'مقدرناش نشارك الآية، جرّب تاني'); }
+    close(); toast('اتشاركت ✨'); burst(innerWidth / 2, innerHeight / 2, 50);
   };
 }
 
@@ -92,6 +97,6 @@ export async function pickVerse(done) {
   m.innerHTML = `<div class="box ask-box"><h2>📖 هات الآية من الكتاب</h2><div id="pvp"><p class="muted" style="text-align:center">بنحمّل الكتاب…</p></div>
     <div class="actions"><button class="btn primary" id="pvu">استخدم الآية دي</button><button class="btn ghost" id="pvc">إلغاء</button></div></div>`;
   document.body.appendChild(m); const close = () => m.remove(); m.onclick = (e) => { if (e.target === m) close(); }; $('#pvc', m).onclick = close;
-  let get = null; try { get = await versePicker($('#pvp', m), { keep: {} }); } catch (e) { $('#pvp', m).innerHTML = '<p class="muted" style="text-align:center">مقدرناش نحمّل الكتاب، جرّب تاني.</p>'; }
+  let get = null; try { get = await versePicker($('#pvp', m), { keep: {}, all: true }); } catch (e) { $('#pvp', m).innerHTML = '<p class="muted" style="text-align:center">مقدرناش نحمّل الكتاب، جرّب تاني.</p>'; }
   $('#pvu', m).onclick = () => { const v = get && get(); if (!v || !v.text) return toast('اختار الآية الأول'); close(); done(v.text); };
 }

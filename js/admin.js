@@ -8,7 +8,7 @@ import { userStats, readState, cairoDate, weeksSummary } from './stats.js';
 import { fmtTime } from './features.js';
 
 const CH = Array.from({ length: 50 }, (_, i) => ({ key: String(i + 1), label: `تكوين ${ar(i + 1)} — ${CH_TITLES[i]}` }));
-const TABS = [['home', 'نظرة عامة'], ['day', 'يوم بيوم'], ['weeks', 'أسابيع'], ['people', 'المشتركين'], ['asks', 'أسئلة المشتركين'], ['reports', 'التقارير'], ['bank', 'بنك الأسئلة'], ['exams', 'الامتحانات'], ['word', 'بيانات اليوم']];
+const TABS = [['home', 'نظرة عامة'], ['day', 'يوم بيوم'], ['weeks', 'أسابيع'], ['people', 'المشتركين'], ['blocked', 'الأرقام المحظورة'], ['asks', 'أسئلة المشتركين'], ['reports', 'التقارير'], ['bank', 'بنك الأسئلة'], ['exams', 'الامتحانات'], ['word', 'بيانات اليوم']];
 const phoneOf = (u) => (S.contacts || {})[u.id] || u.phone || '';
 const wa = (u) => '2' + normPhone(phoneOf(u));
 const siteUrl = () => location.href.split('#')[0].replace(/admin\/?$/, '');
@@ -20,7 +20,7 @@ export async function vAdmin(tab = 'home', arg) {
   const T = TABS.find((x) => x[0] === tab) ? tab : 'home';
   const nav = `<div class="atabs">${TABS.map(([k, l]) => `<a href="#/admin/${k}" class="${k === T ? 'on' : ''}">${l}</a>`).join('')}</div>`;
   APP.innerHTML = `<div class="view admin">${topbar()}<div class="hello"><h1>لوحة المسؤولين</h1><p>${ar(S.users.length)} مشترك في الرحلة</p></div>${nav}<div id="ab"></div></div>`;
-  ({ home, day: dayTab, weeks, people, asks: asksTab, reports: reportsTab, bank, exams: examsTab, word }[T])($('#ab'), arg);
+  ({ home, day: dayTab, weeks, people, blocked: blockedTab, asks: asksTab, reports: reportsTab, bank, exams: examsTab, word }[T])($('#ab'), arg);
   $('.atabs a.on')?.scrollIntoView({ inline: 'center', block: 'nearest' });
 }
 
@@ -97,15 +97,15 @@ function weeks(el) {
 // ---------------------------------------------------------------- المشتركين
 function people(el) {
   const t = todayCairo(); const sort = S.pSort || 'cons';
-  const rows = S.users.map((u) => ({ u, s: userStats(u, t) }));
+  const rows = (S.allUsers.length ? S.allUsers : S.users).map((u) => ({ u, s: userStats(u, t) }));
   const key = { name: (r) => r.u.name, cons: (r) => -r.s.consistency * 1000 - r.s.read, late: (r) => -r.s.late, missed: (r) => -r.s.missed, quiz: (r) => -(r.s.qt ? r.s.qc / r.s.qt : -1), last: (r) => -r.s.lastAt }[sort];
   rows.sort((a, b) => { const x = key(a), y = key(b); return typeof x === 'string' ? x.localeCompare(y, 'ar') : x - y; });
   const th = (k, l) => `<button class="${sort === k ? 'on' : ''}" data-s="${k}">${l}</button>`;
   el.innerHTML = `<div class="between" style="margin-top:12px"><div class="sorts">${th('cons', 'الانتظام')}${th('missed', 'اللي فاتهم')}${th('late', 'المتأخر')}${th('quiz', 'الأسئلة')}${th('last', 'آخر قراءة')}${th('name', 'الاسم')}</div></div>
-  <div class="ptable">${rows.map(({ u, s }) => `<button class="prow" data-p="${u.id}">${avatar(u.name, 34)}<span class="grow"><b>${esc(u.name)}</b><small>${ar(s.read)} قراءة: ${ar(s.onTime)} في معاده${s.late ? `، ${ar(s.late)} متأخر` : ''}${s.missed ? `، فاته ${ar(s.missed)}` : ''}${s.qt ? `، الأسئلة ${ar(s.qc)}/${ar(s.qt)}` : ''}</small></span><span class="cons" style="--p:${s.consistency}%">${ar(s.consistency)}٪</span></button>`).join('')}</div>
+  <div class="ptable">${rows.map(({ u, s }) => `<button class="prow" data-p="${u.id}">${avatar(u.name, 34)}<span class="grow"><b>${esc(u.name)}${u.blocked ? ' <span class="tag late">🚫 محظور</span>' : ''}</b><small>${ar(s.read)} قراءة: ${ar(s.onTime)} في معاده${s.late ? `، ${ar(s.late)} متأخر` : ''}${s.missed ? `، فاته ${ar(s.missed)}` : ''}${s.qt ? `، الأسئلة ${ar(s.qc)}/${ar(s.qt)}` : ''}</small></span><span class="cons" style="--p:${s.consistency}%">${ar(s.consistency)}٪</span></button>`).join('')}</div>
   <button class="btn ghost block" id="csv" style="margin-top:14px">⬇️ نزّل البيانات (Excel / CSV)</button>`;
   $$('.sorts button', el).forEach((b) => b.onclick = () => { S.pSort = b.dataset.s; people(el); });
-  $$('.prow', el).forEach((b) => b.onclick = () => personModal(S.users.find((u) => u.id === b.dataset.p)));
+  $$('.prow', el).forEach((b) => b.onclick = () => personModal(rows.find((r) => r.u.id === b.dataset.p)?.u));
   $('#csv', el).onclick = () => {
     const head = ['الاسم', 'الموبايل', 'قرا', 'في معاده', 'متأخر', 'فاته', 'الانتظام %', 'أسئلة صح', 'أسئلة كلها', 'أيام متتالية', ...DAYS.map((d) => `يوم ${d.n}`)];
     const lines = rows.map(({ u, s }) => [u.name, phoneOf(u), s.read, s.onTime, s.late, s.missed, s.consistency, s.qc, s.qt, s.streak, ...DAYS.map((d) => ({ ontime: '✓', late: 'متأخر', no: '' }[readState(u, d.n)]))]);
@@ -113,6 +113,32 @@ function people(el) {
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a.download = `روح-وحياة-المشتركين-${todayCairo()}.csv`; a.click();
   };
 }
+const blockKey = (u) => (mode === 'demo' ? (u.phone || phoneOf(u) || u.id) : u.id);
+
+// ---------------------------------------------------------------- الأرقام المحظورة: حظر رقم (حتى لو لسه ماسجلش) وفك الحظر
+async function blockedTab(el) {
+  el.innerHTML = `<section class="card"><h2>🚫 حظر رقم موبايل</h2><p class="sub">الرقم المحظور مش هيقدر يدخل الموقع من أي موبايل. لو كان مسجّل، هيتقفل عليه كل حاجة وهيختفي من البحر والترتيب. تقدر تفك الحظر في أي وقت.</p>
+    <div class="field" style="margin-top:12px"><input id="bph" type="tel" inputmode="tel" placeholder=" " maxlength="14" dir="ltr"><label for="bph">رقم الموبايل</label></div>
+    <div class="field"><input id="bnote" placeholder=" " maxlength="80"><label for="bnote">ملاحظة (اختياري)</label></div>
+    <button class="btn red block" id="bgo">احظر الرقم</button></section>
+    <section class="card"><h2>الأرقام المحظورة</h2><div id="blist"><p class="muted">بيحمّل…</p></div></section>`;
+  const draw = async () => {
+    let list = []; try { list = await api.blockedList(); } catch (e) { console.error(e); $('#blist', el).innerHTML = '<p class="muted">مقدرناش نجيب القايمة… اتأكد إن قواعد Firebase الجديدة اتنشرت.</p>'; return; }
+    $('#blist', el).innerHTML = list.length ? list.map((b) => { const u = (S.allUsers || []).find((x) => x.id === b.id); const name = b.name || u?.name || '';
+      return `<div class="member"><span class="grow"><b>${esc(name || 'مش مسجّل')}</b><br><small class="muted" dir="ltr">${esc(b.phone || '—')}</small>${b.note ? `<br><small class="muted">${esc(b.note)}</small>` : ''}${b.at ? `<br><small class="muted">${timeAgo(b.at)}</small>` : ''}</span><button class="btn ghost" data-ub="${esc(b.key)}">فك الحظر</button></div>`; }).join('')
+      : '<p class="muted" style="margin-top:8px">مفيش أرقام محظورة.</p>';
+    $$('[data-ub]', el).forEach((b) => b.onclick = async () => { b.disabled = true; try { await api.unblock(b.dataset.ub); toast('اتفك الحظر ✓'); } catch (e) { console.error(e); toast('مقدرناش نفك الحظر، جرّب تاني'); } draw(); });
+  };
+  $('#bgo', el).onclick = async () => {
+    const p = normPhone($('#bph', el).value); if (!/^01[0125]\d{8}$/.test(p)) return toast('اكتب رقم صح: ١١ رقم ويبدأ بـ 01');
+    $('#bgo', el).disabled = true;
+    try { await api.blockPhone(p, $('#bnote', el).value.trim()); toast('اتحظر الرقم 🚫'); $('#bph', el).value = ''; $('#bnote', el).value = ''; }
+    catch (e) { console.error(e); toast('مقدرناش نحظر الرقم… اتأكد إن قواعد Firebase الجديدة اتنشرت'); }
+    $('#bgo', el).disabled = false; draw();
+  };
+  draw();
+}
+
 function personModal(u) {
   if (!u) return; const t = todayCairo(); const s = userStats(u, t);
   const m = document.createElement('div'); m.className = 'modal';
@@ -121,8 +147,16 @@ function personModal(u) {
     <div class="dgrid">${DAYS.map((d) => `<i class="${d.date > t ? 'fu' : readState(u, d.n)}" title="اليوم ${d.n}">${ar(d.n)}</i>`).join('')}</div>
     <p class="legend2" style="justify-content:center;margin-top:8px"><i class="on"></i>في معاده <i class="la"></i>متأخر <i class="no"></i>فاته</p>
     <div class="actions">${phoneOf(u) ? waBtn(u, `سلام يا ${first(u.name)} 🌿`) : ''}<button class="btn ghost" id="cl">قفل</button></div>
-    <div class="actions"><button class="btn ghost" id="ren">تعديل الاسم</button><button class="btn ghost" id="rm" style="color:var(--heart)">حذف المشترك</button></div></div>`;
+    <div class="actions"><button class="btn ghost" id="ren">تعديل الاسم</button><button class="btn ghost" id="rm" style="color:var(--heart)">حذف المشترك</button></div>
+    <div class="actions"><button class="btn ${u.blocked ? 'primary' : 'ghost'} block" id="blk" ${u.blocked ? '' : 'style="color:var(--heart)"'}>${u.blocked ? '✅ فك الحظر' : '🚫 حظر الرقم ده'}</button></div></div>`;
   document.body.appendChild(m); m.onclick = (e) => { if (e.target === m || e.target.id === 'cl') m.remove(); };
+  m.querySelector('#blk').onclick = async (ev) => {
+    const b = ev.currentTarget;
+    if (!u.blocked && !b.dataset.sure) { b.dataset.sure = 1; b.textContent = 'متأكد؟ مش هيقدر يدخل تاني بالرقم ده'; setTimeout(() => { delete b.dataset.sure; b.textContent = '🚫 حظر الرقم ده'; }, 3500); return; }
+    b.disabled = true;
+    try { if (u.blocked) { await api.unblock(blockKey(u)); toast('اتفك الحظر ✓'); } else { await api.blockUser(u.id, phoneOf(u), u.name); toast('اتحظر الرقم 🚫'); } m.remove(); }
+    catch (e) { console.error(e); b.disabled = false; toast('مقدرناش نحفظ… اتأكد إن قواعد Firebase الجديدة اتنشرت'); }
+  };
   m.querySelector('#ren').onclick = async () => { const n = (prompt('الاسم الجديد', u.name) || '').trim(); if (n.length < 2) return; await api.adminRename(u.id, n); toast('اتعدّل الاسم ✓'); m.remove(); };
   m.querySelector('#rm').onclick = async (ev) => { const b = ev.currentTarget; if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = 'متأكد؟ اضغط تاني'; setTimeout(() => { delete b.dataset.sure; b.textContent = 'حذف المشترك'; }, 3000); return; } await api.adminDeleteUser(u.id); toast('اتحذف المشترك'); m.remove(); };
 }

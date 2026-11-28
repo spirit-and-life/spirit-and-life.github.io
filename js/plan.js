@@ -26,12 +26,22 @@ export function fmtDate(s, withDay = true, withYear = false) {
   return (withDay ? WEEKDAYS[d.getUTCDay()] + ' ' : '') + ar(d.getUTCDate()) + ' ' + MONTHS[d.getUTCMonth()] + (withYear ? ' ' + ar(d.getUTCFullYear()) : '');
 }
 // فرق ساعة الجهاز عن ساعة السيرفر (بالميلي ثانية) — بيتظبط عند فتح الموقع عشان «النهارده» ما يتأثرش بساعة موبايل غلط
-let CLOCK = 0;
-export const setClockOffset = (ms) => { CLOCK = Math.abs(ms) > 120000 ? ms : 0; };
+// لو ماعرفناش نتأكد من ساعة السيرفر (من غير نت)، «النهارده» ما يعدّيش آخر يوم اتأكدنا منه، فتقديم ساعة الموبايل ما يفتحش أيام جاية
+let CLOCK = 0; let VERIFIED = false;
+const LASTDAY = 'ruh:lastday';
+const cairoOf = (ms) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ms));
+export const setClockOffset = (ms) => {
+  CLOCK = Math.abs(ms) > 120000 ? ms : 0; VERIFIED = true;
+  try { const t = cairoOf(nowMs()); if (t > (localStorage.getItem(LASTDAY) || '')) localStorage.setItem(LASTDAY, t); } catch (e) { /* ignore */ }
+};
 export const nowMs = () => Date.now() + CLOCK;
+// ?date=YYYY-MM-DD لمحاكاة أي تاريخ: في الوضع التجريبي (?demo) بس، عشان محدش يفتح أيام جاية بيه
+const DEMO = (() => { try { return new URLSearchParams(location.search).has('demo'); } catch (e) { return false; } })();
 export function todayCairo() {
-  try { const q = new URLSearchParams(location.search).get('date'); if (q && /^\d{4}-\d{2}-\d{2}$/.test(q)) return q; } catch (e) { /* ignore */ }
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(nowMs()));
+  if (DEMO) { try { const q = new URLSearchParams(location.search).get('date'); if (q && /^\d{4}-\d{2}-\d{2}$/.test(q)) return q; } catch (e) { /* ignore */ } }
+  const t = cairoOf(nowMs());
+  if (!VERIFIED) { let last = null; try { last = localStorage.getItem(LASTDAY); } catch (e) { /* ignore */ } if (last && t > last) return last; }
+  return t;
 }
 
 // أيام القراءة: كل يوم من START من غير الجمعة

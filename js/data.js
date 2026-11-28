@@ -4,7 +4,10 @@
 import { firebaseConfig } from './firebase-config.js';
 import { DAYS, dueDays, todayCairo } from './plan.js';
 
-const listeners = { users: new Set(), wall: new Set(), days: new Set(), chq: new Set(), exams: new Set(), myq: new Set() };
+const listeners = { users: new Set(), wall: new Set(), days: new Set(), chq: new Set(), exams: new Set(), myq: new Set(), blocked: new Set(), expired: new Set() };
+// أخطاء معروفة بنعرض لها رسالة واضحة بدل «حصلت مشكلة»
+export const errOf = (code, msg) => Object.assign(new Error(msg || code), { code });
+export const BLOCKED_MSG = 'الرقم ده موقوف من المسؤولين. لو ده حصل بالغلط كلّم حد من المسؤولين.';
 const emit = (k, v) => listeners[k].forEach((f) => { try { f(v); } catch (e) { console.error(e); } });
 const PFX = 'ruh:';
 const ck = {
@@ -32,7 +35,7 @@ export async function idOf(phone) {
   return [...new Uint8Array(h)].map((x) => x.toString(16).padStart(2, '0')).join('').slice(0, 32);
 }
 const ms = (v) => (v && v.toMillis ? v.toMillis() : (typeof v === 'number' ? v : (v && v.seconds ? v.seconds * 1000 : null)));
-function normUser(u) { const ra = {}; Object.entries(u.readAt || {}).forEach(([k, v]) => { const m = ms(v); if (m) ra[k] = m; }); return { ...u, readAt: ra, readDays: u.readDays || [], quiz: u.quiz || {} }; }
+function normUser(u) { const ra = {}; Object.entries(u.readAt || {}).forEach(([k, v]) => { const m = ms(v); if (m) ra[k] = m; }); return { ...u, readAt: ra, readDays: u.readDays || [], quiz: u.quiz || {}, blocked: !!u.blocked }; }
 const normExam = (id, x) => ({ id, ...x, createdAt: ms(x.createdAt) || 0, openAt: ms(x.openAt) || null, closeAt: ms(x.closeAt) || null, questions: x.questions || [], results: x.results || [] });
 
 // حالة الامتحان بالوقت: draft | soon | open | closed | published
@@ -188,7 +191,7 @@ const demoCreative = [
 ];
 function demoImpl() {
   const K = 'demo1_';
-  const memo = { users: store.get(K + 'users', null), wall: store.get(K + 'wall', null), days: store.get(K + 'days', {}), chq: store.get(K + 'chq', {}), exams: store.get(K + 'exams', []), keys: store.get(K + 'keys', {}), subs: store.get(K + 'subs', []), qs: store.get(K + 'qs', null) };
+  const memo = { users: store.get(K + 'users', null), wall: store.get(K + 'wall', null), days: store.get(K + 'days', {}), chq: store.get(K + 'chq', {}), exams: store.get(K + 'exams', []), keys: store.get(K + 'keys', {}), subs: store.get(K + 'subs', []), qs: store.get(K + 'qs', null), blocked: store.get(K + 'blocked', {}) };
   if (!memo.users) {
     const names = ['مينا عادل', 'مارينا سمير', 'كيرلس ناجي', 'مريم هاني', 'أبانوب رأفت', 'فادي جرجس', 'كاترين عماد', 'يوستينا مجدي', 'جورج صبحي', 'ماريان فايز', 'مايكل نبيل', 'ساندرا رامي', 'أندرو ماهر', 'ميرنا أشرف', 'شنودة فكري', 'فيرينا وجيه', 'بولا إسحق', 'ديفيد عاطف'];
     let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
@@ -240,12 +243,14 @@ function demoImpl() {
   }
   function save() { Object.entries(memo).forEach(([k, v]) => store.set(K + k, v)); }
   const me = () => memo.users.find((u) => u.id === store.get('me', null));
+  const guard = () => { const u = me(); if (!u) throw errOf('expired'); if (u.blocked) throw errOf('blocked', BLOCKED_MSG); return u; };
   const myUid = () => 'demo-' + (store.get('me', '') || '');
   const all = () => { emit('myq', (memo.qs || []).filter((q) => q.uid === myUid())); emit('users', memo.users.map(normUser)); emit('wall', memo.wall); emit('days', memo.days); emit('chq', memo.chq); emit('exams', memo.exams.map((x) => normExam(x.id, x))); };
   return {
     async init() { setTimeout(all, 0); return me() ? normUser(me()) : null; },
     async login(name, phone) {
       let u = memo.users.find((x) => x.phone === phone);
+      if (memo.blocked[phone] || (u && u.blocked)) throw errOf('blocked', BLOCKED_MSG);
       if (!u) { u = { id: 'u' + Date.now(), phone, name, readDays: [], readAt: {}, quiz: {}, createdAt: Date.now() }; memo.users.push(u); } else u.name = name;
       store.set('me', u.id); save(); all(); return normUser(u);
     },
@@ -253,10 +258,19 @@ function demoImpl() {
     async rename(name) { const u = me(); if (!u) return; u.name = name; save(); all(); },
     async adminRename(id, name) { const u = memo.users.find((x) => x.id === id); if (u) { u.name = name; save(); all(); } },
     async adminDeleteUser(id) { memo.users = memo.users.filter((x) => x.id !== id); save(); all(); },
-    async setRead(n, on) { const u = me(); if (!u) return; const s = new Set(u.readDays); on ? s.add(n) : s.delete(n); u.readDays = [...s].sort((a, b) => a - b); u.readAt = { ...(u.readAt || {}), [n]: Date.now() }; save(); all(); },
-    async answerChq(key, c, t) { const u = me(); u.quiz = { ...(u.quiz || {}), [key]: { c, t } }; save(); all(); },
+    // حظر أرقام الموبايل (المفتاح في الوضع التجريبي هو الرقم نفسه)
+    async blockPhone(phone, note) { const u = memo.users.find((x) => x.phone === phone); return this.blockUser(u ? u.id : '', phone, u ? u.name : '', note); },
+    async blockUser(id, phone, name, note) {
+      const u = memo.users.find((x) => x.id === id) || memo.users.find((x) => phone && x.phone === phone); const p = phone || u?.phone || id;
+      memo.blocked[p] = { id: u?.id || '', phone: phone || u?.phone || '', name: name || u?.name || '', note: note || '', at: Date.now() };
+      if (u) u.blocked = true; save(); all(); if (u && u.id === store.get('me', null)) emit('blocked', true); return p;
+    },
+    async unblock(key) { const b = memo.blocked[key]; delete memo.blocked[key]; const u = b && memo.users.find((x) => x.id === b.id || (b.phone && x.phone === b.phone)); if (u) u.blocked = false; save(); all(); return true; },
+    async blockedList() { return Object.entries(memo.blocked).map(([key, b]) => ({ key, ...b })).sort((a, b) => b.at - a.at); },
+    async setRead(n, on) { const u = guard(); const s = new Set(u.readDays); on ? s.add(n) : s.delete(n); u.readDays = [...s].sort((a, b) => a - b); u.readAt = { ...(u.readAt || {}), [n]: Date.now() }; save(); all(); },
+    async answerChq(key, c, t) { const u = guard(); u.quiz = { ...(u.quiz || {}), [key]: { c, t } }; save(); all(); },
     myUid,
-    async post(type, text, ref, note) { const u = me(); const anon = type === 'prayer'; memo.wall.push({ id: 'w' + Date.now(), type, text, ref: ref || '', note: note || '', name: anon ? initialOf(u.name) : u.name, userId: anon ? '' : u.id, uid: myUid(), at: Date.now(), amens: 0 }); save(); all(); },
+    async post(type, text, ref, note) { const u = guard(); const anon = type === 'prayer'; memo.wall.push({ id: 'w' + Date.now(), type, text, ref: ref || '', note: note || '', name: anon ? initialOf(u.name) : u.name, userId: anon ? '' : u.id, uid: myUid(), at: Date.now(), amens: 0 }); save(); all(); },
     async amen(id) { const w = memo.wall.find((x) => x.id === id); if (w) { w.amens = (w.amens || 0) + 1; save(); all(); } },
     async react(id, k) { const w = memo.wall.find((x) => x.id === id); if (!w) return true; const r = { ...(w.reacts || {}) }; const u = myUid(); if (!k) delete r[u]; else r[u] = { t: k, n: me().name }; w.reacts = r; save(); all(); return true; },
     async removePost(id) { memo.wall = memo.wall.filter((x) => x.id !== id); save(); all(); },
@@ -277,7 +291,7 @@ function demoImpl() {
     async mySubmission(id) { const u = me(); return memo.subs.find((s) => s.examId === id && s.userId === u?.id) || null; },
     async submissions(id) { return memo.subs.filter((s) => s.examId === id); },
     async gradeSubmission(id, userId, grades) { const s = memo.subs.find((x) => x.examId === id && x.userId === userId); if (s) { s.grades = grades; save(); } return true; },
-    async ask(text, ref, verse) { const u = me(); memo.qs.unshift({ id: 'q' + Date.now(), userId: u.id, name: u.name, uid: myUid(), text, ref: ref || '', verse: verse || '', status: 'new', at: Date.now() }); save(); all(); return true; },
+    async ask(text, ref, verse) { const u = me(); if (!u || u.blocked) return false; memo.qs.unshift({ id: 'q' + Date.now(), userId: u.id, name: u.name, uid: myUid(), text, ref: ref || '', verse: verse || '', status: 'new', at: Date.now() }); save(); all(); return true; },
     async listQuestions() { return [...memo.qs].sort((a, b) => b.at - a.at); },
     async markAnswered(id, by, on = true) { const q = memo.qs.find((x) => x.id === id); if (q) { q.status = on ? 'answered' : 'new'; q.answeredBy = on ? by : ''; q.answeredAt = on ? Date.now() : null; save(); all(); } return true; },
   };
@@ -300,9 +314,16 @@ async function firebaseImpl() {
   const uid = cred.user.uid;
   let users = []; let myId = store.get('me', null);
   const subs = [];
+  // لو الاتصال اترفض (حظر)، نتأكد ونبلّغ الصفحة
+  const denied = (e) => { if (e && e.code === 'permission-denied') checkBan().then((b) => { if (b) emit('blocked', true); }); else console.warn(e); };
+  async function checkBan() {
+    try { if ((await F.getDoc(F.doc(db, 'bans', uid))).exists()) return true; } catch (e) { /* ignore */ }
+    try { if (myId && (await F.getDoc(F.doc(db, 'blockedPhones', myId))).exists()) return true; } catch (e) { /* ignore */ }
+    return false;
+  }
   function startSubs() {
     if (subs.length) return;
-    subs.push(F.onSnapshot(F.collection(db, 'users'), (s) => { users = s.docs.map((d) => { const x = d.data(); return normUser({ id: d.id, name: x.name, readDays: x.readDays, readAt: x.readAt, quiz: x.quiz, lastSeen: ms(x.lastSeen) }); }); emit('users', users); }));
+    subs.push(F.onSnapshot(F.collection(db, 'users'), (s) => { users = s.docs.map((d) => { const x = d.data(); return normUser({ id: d.id, name: x.name, readDays: x.readDays, readAt: x.readAt, quiz: x.quiz, lastSeen: ms(x.lastSeen), blocked: x.blocked }); }); emit('users', users); if (myId && !s.metadata.fromCache && !s.docs.some((d) => d.id === myId)) emit('expired', true); }, denied));
     subs.push(F.onSnapshot(F.query(F.collection(db, 'wall'), F.orderBy('at', 'desc'), F.limit(150)), (s) => {
       emit('wall', s.docs.map((d) => { const x = d.data(); return { id: d.id, ...x, at: ms(x.at) || Date.now() }; }));
     }));
@@ -312,6 +333,34 @@ async function firebaseImpl() {
     subs.push(F.onSnapshot(F.query(F.collection(db, 'questions'), F.where('uid', '==', uid)), (s) => { emit('myq', s.docs.map((d) => { const x = d.data(); return { id: d.id, ...x, at: ms(x.at) || Date.now(), answeredAt: ms(x.answeredAt) }; })); }, () => emit('myq', [])));
   }
   const me = () => users.find((u) => u.id === myId) || (myId ? normUser({ id: myId, name: store.get('myName', '') }) : null);
+  const MAXU = 38; // القواعد بتسمح بـ٤٠ جهاز بالكتير، فبنسيب آخر ٢٠ لو العدد كبر
+  const trimUids = (list) => { const l = (list || []).filter((x) => x !== uid); return l.length >= MAXU ? [...l.slice(-20), uid] : null; };
+  const wait = (t) => new Promise((ok) => setTimeout(() => ok('queued'), t));
+  const NET = ['unavailable', 'deadline-exceeded', 'aborted', 'internal', 'resource-exhausted'];
+  // تعديل بيانات المشترك نفسه بأمان:
+  // - بنضيف الجهاز الحالي لـ uids في كل مرة (السبب الأساسي لرسالة «حصلت مشكلة في الحفظ»: الجهاز بيتغيّر
+  //   معرّفه بعد مسح البيانات أو تحديث المتصفح، بس الكوكي بتفضل فاكرة المشترك، فالقواعد كانت بترفض الحفظ)
+  // - لو عدد الأجهزة وصل للحد، بنخفّفه
+  // - لو النت ضعيف، الحفظ بيتسجل على الجهاز وبيتبعت لوحده أول ما النت يرجع
+  async function selfUpdate(patch) {
+    if (!myId) throw errOf('expired');
+    const ref = F.doc(db, 'users', myId);
+    const run = (p) => Promise.race([F.updateDoc(ref, p), wait(12000)]);
+    for (let attempt = 0; ; attempt++) {
+      try { return await run({ ...patch, uids: F.arrayUnion(uid) }); } catch (e) {
+        if (e.code === 'not-found') throw errOf('expired');
+        if (e.code === 'permission-denied') {
+          let snap = null; try { snap = await F.getDoc(ref); } catch (e2) { throw e; }
+          if (!snap.exists()) throw errOf('expired');
+          if (snap.data().blocked || await checkBan()) { emit('blocked', true); throw errOf('blocked', BLOCKED_MSG); }
+          const t = trimUids(snap.data().uids); if (t && attempt === 0) return await run({ ...patch, uids: t });
+          throw e;
+        }
+        if (NET.includes(e.code) && attempt < 2) { await wait(1200 * (attempt + 1)); continue; }
+        throw e;
+      }
+    }
+  }
   return {
     async init() {
       if (!myId) {
@@ -320,23 +369,64 @@ async function firebaseImpl() {
           if (!q.empty) { myId = q.docs[0].id; store.set('me', myId); store.set('myName', q.docs[0].data().name); }
         } catch (e) { console.warn(e); }
       }
-      if (myId) startSubs(); return myId ? me() : null;
+      if (myId) {
+        // نتأكد إن المشترك لسه موجود، ومش محظور، وإن الجهاز ده مربوط بيه (عشان الحفظ ما يترفضش بعدين)
+        try {
+          const snap = await F.getDoc(F.doc(db, 'users', myId));
+          if (!snap.exists()) { if (!snap.metadata.fromCache) { store.del('me'); store.del('myName'); myId = null; return null; } }
+          else {
+            const x = snap.data(); if (x.name) store.set('myName', x.name);
+            if (x.blocked || await checkBan()) return { ...me(), blocked: true };
+            if (!(x.uids || []).includes(uid)) selfUpdate({ lastSeen: F.serverTimestamp() }).catch((e) => console.warn('relink', e));
+          }
+        } catch (e) { if (e.code === 'permission-denied' && await checkBan()) return { ...me(), blocked: true }; console.warn(e); }
+        startSubs();
+      }
+      return myId ? me() : null;
     },
     async login(name, phone) {
-      const id = await idOf(phone); const ref = F.doc(db, 'users', id); const snap = await F.getDoc(ref);
-      if (snap.exists()) await F.updateDoc(ref, { name, uids: F.arrayUnion(uid), lastSeen: F.serverTimestamp() });
-      else await F.setDoc(ref, { name, uids: [uid], readDays: [], readAt: {}, quiz: {}, createdAt: F.serverTimestamp(), lastSeen: F.serverTimestamp() });
+      const id = await idOf(phone); const ref = F.doc(db, 'users', id);
+      let bl = false; try { bl = (await F.getDoc(F.doc(db, 'blockedPhones', id))).exists(); } catch (e) { /* ignore */ }
+      if (bl) throw errOf('blocked', BLOCKED_MSG);
+      const snap = await F.getDoc(ref);
+      if (snap.exists()) {
+        if (snap.data().blocked) throw errOf('blocked', BLOCKED_MSG);
+        const t = trimUids(snap.data().uids);
+        await F.updateDoc(ref, { name, uids: t || F.arrayUnion(uid), lastSeen: F.serverTimestamp() });
+      } else await F.setDoc(ref, { name, uids: [uid], readDays: [], readAt: {}, quiz: {}, createdAt: F.serverTimestamp(), lastSeen: F.serverTimestamp() });
       try { await F.setDoc(F.doc(db, 'contacts', id), { phone }); } catch (e) { console.warn('contact', e); }
       myId = id; store.set('me', id); store.set('myName', name); startSubs(); return me();
     },
     async logout() { store.del('me'); store.del('myName'); myId = null; },
-    async rename(name) { await F.updateDoc(F.doc(db, 'users', myId), { name, lastSeen: F.serverTimestamp() }); store.set('myName', name); },
+    async rename(name) { await selfUpdate({ name, lastSeen: F.serverTimestamp() }); store.set('myName', name); },
     async adminRename(id, name) { await F.updateDoc(F.doc(db, 'users', id), { name }); },
     async adminDeleteUser(id) { await F.deleteDoc(F.doc(db, 'users', id)); try { await F.deleteDoc(F.doc(db, 'contacts', id)); } catch (e) { /* ignore */ } },
     async setRead(n, on) {
-      await F.updateDoc(F.doc(db, 'users', myId), on ? { readDays: F.arrayUnion(n), [`readAt.${n}`]: F.serverTimestamp(), lastSeen: F.serverTimestamp() } : { readDays: F.arrayRemove(n) });
+      await selfUpdate(on ? { readDays: F.arrayUnion(n), [`readAt.${n}`]: F.serverTimestamp(), lastSeen: F.serverTimestamp() } : { readDays: F.arrayRemove(n) });
     },
-    async answerChq(key, c, t) { await F.updateDoc(F.doc(db, 'users', myId), { [`quiz.${key}`]: { c, t }, lastSeen: F.serverTimestamp() }); },
+    async answerChq(key, c, t) { await selfUpdate({ [`quiz.${key}`]: { c, t }, lastSeen: F.serverTimestamp() }); },
+    // ---- حظر أرقام الموبايل (المسؤولين): blockedPhones/{معرّف الرقم} بيمنع الدخول بالرقم ده من أي جهاز،
+    // و bans/{uid} بيقفل القراءة والكتابة على الأجهزة اللي المشترك كان داخل منها
+    async blockPhone(phone, note) { const id = await idOf(phone); return this.blockUser(id, phone, '', note); },
+    async blockUser(id, phone, name, note) {
+      const ref = F.doc(db, 'users', id); const snap = await F.getDoc(ref); const x = snap.exists() ? snap.data() : null;
+      await F.setDoc(F.doc(db, 'blockedPhones', id), { phone: phone || '', name: name || x?.name || '', note: note || '', at: F.serverTimestamp() });
+      if (x) {
+        await F.updateDoc(ref, { blocked: true });
+        await Promise.all((x.uids || []).map((u) => F.setDoc(F.doc(db, 'bans', u), { userId: id, at: F.serverTimestamp() }).catch((e) => console.warn('ban', e))));
+      }
+      return id;
+    },
+    async unblock(id) {
+      await F.deleteDoc(F.doc(db, 'blockedPhones', id));
+      const ref = F.doc(db, 'users', id); const snap = await F.getDoc(ref);
+      if (snap.exists()) {
+        await F.updateDoc(ref, { blocked: false });
+        await Promise.all((snap.data().uids || []).map((u) => F.deleteDoc(F.doc(db, 'bans', u)).catch(() => {})));
+      }
+      return true;
+    },
+    async blockedList() { const q = await F.getDocs(F.collection(db, 'blockedPhones')); return q.docs.map((d) => { const x = d.data(); return { key: d.id, id: d.id, ...x, at: ms(x.at) || 0 }; }).sort((a, b) => b.at - a.at); },
     myUid: () => uid,
     async post(type, text, ref, note) { const u = me(); const anon = type === 'prayer'; await F.addDoc(F.collection(db, 'wall'), { type, text, ref: ref || '', note: note || '', name: anon ? initialOf(u.name) : u.name, userId: anon ? '' : myId, uid, at: F.serverTimestamp(), amens: 0 }); },
     async amen(id) { await F.updateDoc(F.doc(db, 'wall', id), { amens: F.increment(1) }); },

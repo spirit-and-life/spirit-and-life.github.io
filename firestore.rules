@@ -3,9 +3,14 @@ service cloud.firestore {
   match /databases/{db}/documents {
     function signedIn() { return request.auth != null; }
     function isServant() { return signedIn() && exists(/databases/$(db)/documents/admins/$(request.auth.uid)); }
-    function owns(userId) { return signedIn() && request.auth.uid in get(/databases/$(db)/documents/users/$(userId)).data.uids; }
+    // جهاز محظور (المسؤولين حظروا صاحبه): ما يقراش ولا يكتب حاجة
+    function banned() { return exists(/databases/$(db)/documents/bans/$(request.auth.uid)); }
+    function member() { return signedIn() && !banned(); }
+    // رقم محظور (المعرّف المشفّر بتاع الرقم)
+    function phoneBlocked(userId) { return exists(/databases/$(db)/documents/blockedPhones/$(userId)); }
+    function owns(userId) { return member() && !phoneBlocked(userId) && request.auth.uid in get(/databases/$(db)/documents/users/$(userId)).data.uids; }
     function okUser(d) {
-      return d.keys().hasOnly(['name','uids','readDays','readAt','quiz','createdAt','lastSeen'])
+      return d.keys().hasOnly(['name','uids','readDays','readAt','quiz','createdAt','lastSeen','blocked'])
         && d.name is string && d.name.size() >= 2 && d.name.size() <= 40
         && d.uids is list && request.auth.uid in d.uids && d.uids.size() <= 40
         && d.readDays is list && d.readDays.size() <= 50;
@@ -13,10 +18,18 @@ service cloud.firestore {
 
     // المشتركين: المعرّف مشفّر (SHA-256) فمفيش رقم موبايل ظاهر هنا
     match /users/{id} {
-      allow read: if signedIn();
-      allow create: if signedIn() && id.matches('^[0-9a-f]{32}$') && okUser(request.resource.data);
-      allow update: if signedIn() && okUser(request.resource.data) && request.resource.data.createdAt == resource.data.createdAt;
-      allow update: if isServant() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name']) && request.resource.data.name is string && request.resource.data.name.size() >= 2 && request.resource.data.name.size() <= 40;
+      allow read: if member();
+      allow create: if member() && id.matches('^[0-9a-f]{32}$') && !phoneBlocked(id)
+        && okUser(request.resource.data) && !('blocked' in request.resource.data);
+      // المشترك نفسه (أو دخوله من جهاز جديد بنفس الرقم): مش مسموح لو الرقم محظور، ومش مسموح يغيّر علامة الحظر
+      allow update: if member() && !phoneBlocked(id) && okUser(request.resource.data)
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.get('blocked', false) == resource.data.get('blocked', false)
+        && resource.data.get('blocked', false) == false;
+      // المسؤولين: تعديل الاسم، وعلامة الحظر
+      allow update: if isServant() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'blocked'])
+        && request.resource.data.name is string && request.resource.data.name.size() >= 2 && request.resource.data.name.size() <= 40
+        && request.resource.data.get('blocked', false) is bool;
       allow delete: if isServant();
     }
     // أرقام الموبايل: المسؤولين بس بيقروها
@@ -26,14 +39,24 @@ service cloud.firestore {
         && request.resource.data.phone is string && request.resource.data.phone.matches('^01[0125][0-9]{8}$');
       allow delete: if isServant();
     }
-    match /days/{day} { allow read: if signedIn(); allow write: if isServant(); }
-    match /chq/{key} { allow read: if signedIn(); allow write: if isServant(); }
-    match /exams/{id} { allow read: if signedIn(); allow write: if isServant(); }
+    // الأرقام المحظورة: أي حد يقدر يسأل عن رقم واحد بعينه (عشان صفحة الدخول)، والمسؤولين بس يشوفوا القايمة ويعدّلوها
+    match /blockedPhones/{id} {
+      allow get: if signedIn();
+      allow list, write: if isServant();
+    }
+    // الأجهزة المحظورة: الجهاز يقدر يعرف هو محظور ولا لأ، والمسؤولين بس يعدّلوا
+    match /bans/{uid} {
+      allow get: if signedIn() && (request.auth.uid == uid || isServant());
+      allow list, write: if isServant();
+    }
+    match /days/{day} { allow read: if member(); allow write: if isServant(); }
+    match /chq/{key} { allow read: if member(); allow write: if isServant(); }
+    match /exams/{id} { allow read: if member(); allow write: if isServant(); }
     // مفاتيح الإجابات الصح: المسؤولين بس
     match /examKeys/{id} { allow read, write: if isServant(); }
     // تسليم الامتحان: مرة واحدة (create بس) وفي وقت الفتح فقط
     match /submissions/{sid} {
-      allow create: if signedIn() && request.resource.data.uid == request.auth.uid
+      allow create: if member() && request.resource.data.uid == request.auth.uid
         && owns(request.resource.data.userId)
         && sid == request.resource.data.examId + '_' + request.resource.data.userId
         && request.resource.data.keys().hasOnly(['examId','userId','name','uid','answers','dur','at'])
@@ -43,24 +66,24 @@ service cloud.firestore {
             || request.time >= get(/databases/$(db)/documents/exams/$(request.resource.data.examId)).data.openAt)
         && (!('closeAt' in get(/databases/$(db)/documents/exams/$(request.resource.data.examId)).data)
             || request.time <= get(/databases/$(db)/documents/exams/$(request.resource.data.examId)).data.closeAt);
-      allow read: if isServant() || (signedIn() && resource.data.uid == request.auth.uid);
+      allow read: if isServant() || (member() && resource.data.uid == request.auth.uid);
       allow update: if isServant() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['grades']);
       allow delete: if isServant();
     }
     // أسئلة المشتركين للمسؤولين (بيردّوا عليها على الواتساب): صاحب السؤال والمسؤولين بس بيشوفوها
     match /questions/{id} {
-      allow create: if signedIn() && request.resource.data.uid == request.auth.uid && owns(request.resource.data.userId)
+      allow create: if member() && request.resource.data.uid == request.auth.uid && owns(request.resource.data.userId)
         && request.resource.data.status == 'new'
         && request.resource.data.text is string && request.resource.data.text.size() <= 600
         && request.resource.data.verse is string && request.resource.data.verse.size() <= 1500
         && request.resource.data.ref is string && request.resource.data.ref.size() <= 80;
-      allow read: if isServant() || (signedIn() && resource.data.uid == request.auth.uid);
+      allow read: if isServant() || (member() && resource.data.uid == request.auth.uid);
       allow update, delete: if isServant();
     }
     // آيات لمستنا (آيات وتأملات) وزرار «آمين»
     match /wall/{id} {
-      allow read: if signedIn();
-      allow create: if signedIn() && request.resource.data.uid == request.auth.uid
+      allow read: if member();
+      allow create: if member() && request.resource.data.uid == request.auth.uid
         && request.resource.data.type in ['verse','reflection','prayer']
         && (request.resource.data.type == 'prayer' ? (request.resource.data.userId == '' && request.resource.data.name.size() <= 3) : owns(request.resource.data.userId))
         && request.resource.data.text is string && request.resource.data.text.size() >= 1 && request.resource.data.text.size() <= 1500
@@ -69,7 +92,7 @@ service cloud.firestore {
         && (!('note' in request.resource.data) || (request.resource.data.note is string && request.resource.data.note.size() <= 200))
         && request.resource.data.amens == 0;
       // تعديل واحد من اتنين: زيادة amens بواحد (صلّيت)، أو تفاعلك أنت بس في reacts
-      allow update: if signedIn() && (
+      allow update: if member() && (
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['amens'])
           && request.resource.data.amens == resource.data.amens + 1)
         || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reacts'])
@@ -80,7 +103,7 @@ service cloud.firestore {
                   && request.resource.data.reacts[request.auth.uid].n is string
                   && request.resource.data.reacts[request.auth.uid].n.size() <= 40)))
       );
-      allow delete: if isServant() || (signedIn() && resource.data.uid == request.auth.uid);
+      allow delete: if isServant() || (member() && resource.data.uid == request.auth.uid);
     }
     // المسؤولين: بكود بيتحدد مرة واحدة، وبعد كده بيتغيّر من Firebase بس
     match /admins/{uid} {

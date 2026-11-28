@@ -43,7 +43,7 @@ export function chapterQuiz(el, key, label) {
       $('#qn', body).onclick = async () => {
         if (i < Q.length - 1) { i++; show(); return; }
         const c = Math.round(sum * 2) / 2;
-        try { await api.answerChq(key, c, Q.length); } catch (e) { console.error(e); }
+        try { await api.answerChq(key, c, Q.length); } catch (e) { console.error(e); toast(e.code === 'blocked' ? e.message : 'مقدرناش نحفظ نتيجة الأسئلة… افتح الأصحاح تاني وجاوب لما النت يبقى كويس'); }
         const p = c / Q.length;
         body.innerHTML = `<div class="qend"><div class="big">${p === 1 ? '🌟' : p >= .5 ? '👍' : '📖'}</div><h3>${fmtN(c)} من ${ar(Q.length)}</h3><p class="sub">${p === 1 ? 'كله صح! ربنا يبارك قرايتك' : p >= .5 ? 'كويس جدًا… ارجع للأصحاح وهتلاقي الباقي' : 'ارجع للأصحاح تاني وهتلاقي الإجابات'}</p></div>`;
         if (p === 1) { const r = body.getBoundingClientRect(); burst(r.left + r.width / 2, r.top + 40, 120); }
